@@ -750,7 +750,7 @@ def render_project(cat: Catalog, slug: str) -> Path:
         lines.append("")
     if not recs and not srcs:
         lines += ["The catalog is empty. Ask your assistant to import results from your notes "
-                  "(see PROMPTS.md, 'Import my existing work').", ""]
+                  "(see 'Import earlier work' in PROMPTS.md).", ""]
     path = project_dir(slug) / "indexes" / "CATALOG.md"
     atomic_write(path, "\n".join(lines))
     return path

@@ -1,7 +1,7 @@
 # {{HUB_NAME}}
 
-Research hub of {{OWNER}}, created {{DATE}}. Pick a project; its guide holds
-the current state of the research.
+Created {{DATE}}. Pick a project; its guide holds the current state of the
+research.
 
 <!-- projects:start -->
 <!-- projects:end -->

@@ -24,6 +24,9 @@ HUB_ARCHIVES="$WORK/old-notes" HUB_ASSISTANTS=claude HUB_INSTALL_TOOLS=no HUB_GI
   python3 tools/hub.py search "widget ample" --project widgets-and-ampleness --archives | grep -q "notes.tex"
   grep -q "Base field: C" projects/widgets-and-ampleness/AGENTS.md
   grep -q "Widgets and ampleness" START_HERE.md
+  [ "$(grep -c "Test Owner" START_HERE.md)" = 1 ]          # owner named once on the front page
+  grep -q "Import earlier work" projects/widgets-and-ampleness/indexes/CATALOG.md
+  grep -q "Import earlier work" PROMPTS.md                  # the section the empty catalog points to
   python3 -c 'import json; json.load(open(".claude/settings.json"))'
   python3 tools/test_hub.py > "$WORK/unit.log" 2>&1 || { cat "$WORK/unit.log"; exit 1; }
 ) || fail "unattended install produced a broken hub"
