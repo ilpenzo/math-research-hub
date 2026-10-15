@@ -91,6 +91,19 @@ expand_path() {
 }
 
 main() {
+TMP_KIT=""; STAGE=""; FINISHED=0
+cleanup() {
+  local status=$?
+  [ -n "$TMP_KIT" ] && rm -rf "$TMP_KIT"
+  if [ -n "$STAGE" ] && [ -d "$STAGE" ]; then
+    rm -rf "$STAGE"
+    if [ "$FINISHED" != 1 ] && [ "$status" != 0 ]; then
+      printf '\n%sThe installer stopped before finishing, so no hub was created.%s\n' "$R" "$N" >&2
+      printf 'Fix the problem shown above (or ask for help with it), then run the same command again.\n' >&2
+    fi
+  fi
+}
+trap cleanup EXIT
 # ------------------------------------------------------------------ welcome
 head_ "Research hub installer"
 say "This sets up a folder where AI assistants (Claude Code and/or Codex) can"
@@ -132,7 +145,6 @@ fi
 if [ -z "$KIT" ]; then
   command -v curl >/dev/null || die "curl is needed to download the kit."
   TMP_KIT="$(mktemp -d)"
-  trap 'rm -rf "$TMP_KIT"' EXIT
   say "Downloading the hub kit from github.com/$KIT_REPO ..."
   curl -fsSL "$KIT_URL" \
     | tar -xz -C "$TMP_KIT" --strip-components=1 \
@@ -282,13 +294,18 @@ fi
 
 # ------------------------------------------------------------------ build
 head_ "Creating your hub"
-mkdir -p "$HUB_PATH"
-cp -R "$KIT/template/." "$HUB_PATH/"
-find "$HUB_PATH" -name "__pycache__" -type d -prune -exec rm -rf {} + 2>/dev/null || true
+# Build in a hidden folder next to the destination and move it into place only
+# when everything has worked, so an interrupted install leaves nothing behind.
+mkdir -p "$(dirname "$HUB_PATH")"
+STAGE="$(dirname "$HUB_PATH")/.$(basename "$HUB_PATH").installing-$$"
+mkdir "$STAGE"
+cp -R "$KIT/template/." "$STAGE/"
+find "$STAGE" -name "__pycache__" -type d -prune -exec rm -rf {} + 2>/dev/null || true
+[ -n "${_HUB_TEST_FAIL_DURING_BUILD:-}" ] && die "simulated failure (test only)"
 
 CONVENTIONS_MD="$(printf '%s' "$CONVENTIONS_RAW" | sed '/^[[:space:]]*$/d; s/^[[:space:]]*[-*][[:space:]]*//; s/^/- /')"
 
-HUB_PATH="$HUB_PATH" OWNER="$OWNER" "$PY" - <<'PYEOF'
+HUB_PATH="$STAGE" OWNER="$OWNER" "$PY" - <<'PYEOF'
 import datetime, json, os
 from pathlib import Path
 hub = Path(os.environ["HUB_PATH"])
@@ -305,15 +322,19 @@ for name in ("START_HERE.md", "CHANGELOG.md"):
     path.write_text(text)
 settings = {
     "permissions": {
-        "allow": [f"Bash(python3 tools/hub.py {c} *)" for c in
-                  ("context", "search", "show", "impact", "check", "render", "hash", "doctor", "new-note")],
-        "deny": ["Edit(/projects/*/catalog/**)", "Edit(/hub.json)", "Edit(/library/**)", "Edit(/.hub/**)"],
+        # The hub's own tool validates every change and keeps backups; local
+        # git saves are undoable. Uploading is blocked outright.
+        "allow": ["Bash(python3 tools/hub.py *)", "Bash(python3 tools/test_hub.py *)",
+                  "Bash(pdftotext *)", "Bash(git status *)", "Bash(git diff *)",
+                  "Bash(git log *)", "Bash(git add *)", "Bash(git commit *)"],
+        "deny": ["Edit(/projects/*/catalog/**)", "Edit(/hub.json)", "Edit(/library/**)",
+                 "Edit(/.hub/**)", "Bash(git push *)", "Bash(git remote *)"],
     }
 }
 (hub / ".claude" / "settings.json").write_text(json.dumps(settings, indent=2) + "\n")
 PYEOF
 
-cd "$HUB_PATH"
+cd "$STAGE"
 "$PY" tools/hub.py add-project "$SLUG" --title "$TITLE" --prefix "$PREFIX" \
   --description "$DESCRIPTION" --conventions "$CONVENTIONS_MD" >/dev/null
 say "${G}ok${N}  project $SLUG"
@@ -323,6 +344,12 @@ done
 "$PY" tools/hub.py render >/dev/null
 "$PY" tools/hub.py check >/dev/null && say "${G}ok${N}  hub check passed" || warn "The hub check reported a problem; run  python3 tools/hub.py check  to see it."
 "$PY" tools/test_hub.py >/dev/null 2>&1 && say "${G}ok${N}  tool self-test passed" || warn "The tool self-test failed; run  python3 tools/test_hub.py  to see why."
+
+cd /
+[ -d "$HUB_PATH" ] && rmdir "$HUB_PATH"       # an empty folder chosen as the destination
+mv "$STAGE" "$HUB_PATH"
+FINISHED=1
+cd "$HUB_PATH"
 
 if [ "$USE_GIT" = 1 ]; then
   git init -q

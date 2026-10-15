@@ -33,6 +33,28 @@ HUB_ARCHIVES="$WORK/old-notes" HUB_ASSISTANTS=claude HUB_INSTALL_TOOLS=no HUB_GI
 [ "$(cat "$CODEX_HOME/config.toml")" = 'model = "example"' ] || fail "Claude-only install changed the Codex settings"
 pass "unattended install, hub check, archive search, tool self-tests"
 
+# 1b. Claude Code permissions: the hub's own commands pre-approved, uploading blocked.
+python3 - "$WORK/hub1/.claude/settings.json" <<'PYEOF' || fail "Claude Code permissions"
+import json, sys
+perms = json.load(open(sys.argv[1]))["permissions"]
+assert "Bash(python3 tools/hub.py *)" in perms["allow"]
+assert "Bash(git push *)" in perms["deny"] and "Edit(/projects/*/catalog/**)" in perms["deny"]
+PYEOF
+pass "Claude Code permissions: hub commands pre-approved, git push blocked"
+
+# 1c. An install that stops halfway leaves nothing behind, and a rerun works.
+if _HUB_TEST_FAIL_DURING_BUILD=1 HUB_YES=1 HUB_DIR="$WORK/hub-retry" HUB_ASSISTANTS=claude \
+   HUB_INSTALL_TOOLS=no HUB_GIT=no bash "$KIT/install.sh" > "$WORK/log" 2>&1; then
+  fail "simulated failure did not stop the installer"
+fi
+grep -q "no hub was created" "$WORK/log" || fail "no explanation after a failed install"
+[ ! -e "$WORK/hub-retry" ] || fail "a failed install left a hub folder"
+! ls -A "$WORK" | grep -q "installing" || fail "a failed install left its staging folder"
+HUB_YES=1 HUB_DIR="$WORK/hub-retry" HUB_ASSISTANTS=claude HUB_INSTALL_TOOLS=no HUB_GIT=no \
+  bash "$KIT/install.sh" > "$WORK/log" 2>&1 || fail "rerun after a failed install"
+(cd "$WORK/hub-retry" && python3 tools/hub.py check > /dev/null) || fail "rerun produced a broken hub"
+pass "interrupted install leaves nothing behind; rerun succeeds"
+
 # 2. The 'curl ... | bash' path: script on standard input, kit downloaded as a tarball.
 tar -czf "$WORK/kit.tar.gz" -C "$(dirname "$KIT")" --exclude .git --exclude __pycache__ "$(basename "$KIT")"
 cat "$KIT/install.sh" | KIT_URL="file://$WORK/kit.tar.gz" HUB_YES=1 HUB_DIR="$WORK/hub2" \
