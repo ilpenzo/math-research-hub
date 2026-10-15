@@ -7,7 +7,7 @@ KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 export CODEX_HOME="$WORK/codex-home"
-mkdir -p "$WORK/old-notes" "$CODEX_HOME"
+mkdir -p "$WORK/old-notes" "$WORK/my old notes" "$CODEX_HOME"
 printf 'Lemma. Every widget is ample.\n' > "$WORK/old-notes/notes.tex"
 printf 'model = "example"\n' > "$CODEX_HOME/config.toml"
 pass() { printf 'ok  %s\n' "$*"; }
@@ -85,13 +85,14 @@ pass "Codex trust entry added once, backup kept, TOML valid"
 # 4. A person at the keyboard: interactive answers through a real terminal.
 if command -v expect > /dev/null; then
   expect "$KIT/tests/interactive.exp" "$KIT/install.sh" "file://$WORK/kit.tar.gz" \
-    "$WORK/hub3" "$WORK/old-notes" > "$WORK/log" 2>&1 || fail "interactive install"
+    "$WORK/hub3" "$WORK/my old notes" > "$WORK/log" 2>&1 || fail "interactive install"
   P="$WORK/hub3/projects/hodge-classes-on-abelian-fourfolds"
   grep -q "HC-R001" "$P/AGENTS.md" || fail "lowercase prefix was not upper-cased"
   grep -q "^- abelian varieties are principally polarized$" "$P/AGENTS.md" || fail "conventions not recorded"
-  grep -q "Skipping ~/no-such-folder-for-this-test" "$WORK/log" || fail "missing archive folder not reported"
-  grep -q '"old-notes"' "$WORK/hub3/hub.json" || fail "archive not registered"
-  pass "interactive install through a terminal"
+  grep -q "Not a folder: ~/no-such-folder-for-this-test" "$WORK/log" || fail "missing archive folder not reported"
+  grep -q '"my-old-notes"' "$WORK/hub3/hub.json" || fail "dragged-in folder (with a space) not registered"
+  grep -q "DOWN ARROW" "$WORK/log" || fail "closing steps do not explain the trust screen"
+  pass "interactive install through a terminal, folder dragged in from Finder"
 else
   printf 'skip interactive test (install "expect" to run it)\n'
 fi

@@ -111,7 +111,7 @@ say "work on your mathematics under rules that keep the record honest: every"
 say "claim labelled with who checked it, citations checked against sources,"
 say "failed attempts remembered, and proofs reviewed by a fresh checker."
 say ""
-say "You will answer about ten questions. Press Enter to accept the answer in"
+say "You will answer about ten questions. Press Return (Enter) to accept the answer in"
 say "[brackets]. Nothing is uploaded, and nothing outside the new folder is"
 say "changed unless you agree to install an assistant or a PDF tool."
 
@@ -129,7 +129,7 @@ esac
 PY="$(command -v python3 || true)"
 if [ -z "$PY" ] || ! "$PY" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)' 2>/dev/null; then
   if [ "$OS" = "Darwin" ]; then
-    die "Python 3.9 or newer is needed. Run   xcode-select --install   (Apple's free developer tools include Python), then run this installer again."
+    die "Python 3.9 or newer is needed. If a window offered to install the \"command line developer tools\", click Install; otherwise type   xcode-select --install   and press Return. When that finishes (it can take 10-20 minutes), run this installer again."
   else
     die "Python 3.9 or newer is needed. On Ubuntu or Debian run   sudo apt install python3   then run this installer again."
   fi
@@ -217,19 +217,45 @@ CONVENTIONS_RAW="${HUB_CONVENTIONS:-}"
 
 head_ "5. Your earlier work (optional)"
 note "Folders of notes, TeX files, code or PDFs the assistants may search but never change."
-note "Example: ~/Documents/research/old-notes"
-ARCHIVES_RAW=""
-if [ -n "${HUB_ARCHIVES:-}" ]; then
-  ARCHIVES_RAW="$(printf '%s' "$HUB_ARCHIVES" | tr ':' '\n')"$'\n'
-else
-  ask_lines ARCHIVES_RAW "Folders to register as read-only archives"
+if [ "$OS" = "Darwin" ]; then
+  note "Easiest: drag a folder from a Finder window into this window, then press Return."
+  note "If your Mac asks whether Terminal may access a folder, click OK (Allow)."
+elif grep -qi microsoft /proc/version 2>/dev/null; then
+  note "Windows folders are written like  /mnt/c/Users/YOURNAME/Documents/old-notes"
 fi
+note "Example: ~/Documents/research/old-notes   (you can also add folders later)"
 ARCHIVES=()
-while IFS= read -r line; do
-  [ -z "$line" ] && continue
-  p="$(expand_path "$line")"
-  if [ -d "$p" ]; then ARCHIVES+=("$p"); else warn "Skipping $line: not a folder."; fi
-done <<< "$ARCHIVES_RAW"
+# Accepts typed paths, ~, quotes, and the backslash-escaped form with a
+# trailing space that Finder produces when a folder is dragged in.
+add_archive() {
+  local raw="$1" clean
+  clean="$("$PY" -c '
+import shlex, sys
+s = sys.argv[1].strip()
+try:
+    parts = shlex.split(s)
+    s = parts[0] if len(parts) == 1 else s
+except ValueError:
+    pass
+print(s)' "$raw")"
+  [ -z "$clean" ] && return 0
+  clean="$(expand_path "$clean")"
+  if [ -d "$clean" ]; then ARCHIVES+=("$clean"); say "  ${G}ok${N}  $clean"; return 0; fi
+  warn "  Not a folder: $raw"
+  return 1
+}
+if [ -n "${HUB_ARCHIVES:-}" ]; then
+  while IFS= read -r line; do add_archive "$line" || true; done <<< "$(printf '%s' "$HUB_ARCHIVES" | tr ':' '\n')"
+elif [ "$INTERACTIVE" = "1" ]; then
+  printf '%s%s%s\n' "$B" "Folders to register as read-only archives" "$N" > /dev/tty
+  note "(One per line. Press Return on an empty line to finish.)" > /dev/tty
+  while :; do
+    printf '  > ' > /dev/tty
+    IFS= read -r line < /dev/tty || break
+    [ -z "$(printf '%s' "$line" | tr -d '[:space:]')" ] && break
+    add_archive "$line" || note "  Try again, or press Return on an empty line to skip." > /dev/tty
+  done
+fi
 
 head_ "6. AI assistants"
 note "Claude Code (Anthropic) needs a paid Claude plan (Pro, Max, Team or Enterprise) or an API account."
@@ -404,22 +430,25 @@ say "  1. Open a new terminal window (so newly installed programs are found) and
 say "       cd \"$HUB_PATH\""
 if [ "$USE_CLAUDE" = 1 ]; then
   say "       claude"
-  say "     The first time, it opens your browser to log in to your Claude account, then"
-  say "     asks whether you trust this folder: answer yes, or it ignores the hub's settings."
+  say "     The first time, it opens your browser to log in to your Claude account. When it"
+  say "     asks whether you trust this folder, press the DOWN ARROW to choose"
+  say "     \"Yes, I trust this folder\", then Return (Return alone means \"No, exit\")."
 fi
 if [ "$USE_CODEX" = 1 ]; then
-  [ "$USE_CLAUDE" = 1 ] && say "     (or, for Codex:)"
+  [ "$USE_CLAUDE" = 1 ] && say "     To use Codex instead, type this in place of claude (not both):"
   say "       codex"
   say "     The first time, choose \"Sign in with ChatGPT\". If asked whether to trust"
   say "     this folder, answer yes so it loads the hub's helper roles and settings."
 fi
-say "  2. Paste this as your first message:"
+say "  2. Paste this as your first message, then press Return:"
 say "       Read START_HERE.md and AGENTS.md, then give me a ten-line tour of this hub"
 say "       and suggest what I should do first."
 say "  3. More ready-made requests are in PROMPTS.md inside the hub."
 say ""
-note "If 'claude' or 'codex' is \"not found\" even in a new window, add this line to ~/.zshrc"
-note "(or ~/.bashrc on Linux) and open a new window:   export PATH=\"\$HOME/.local/bin:\$PATH\""
+if [ "$OS" = "Darwin" ]; then RC='~/.zshrc'; else RC='~/.bashrc'; fi
+note "If 'claude' or 'codex' is \"not found\" even in a new window, paste this line, press"
+note "Return, and open a new window:"
+note "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> $RC"
 }
 
 # Wrapped in a function so that 'curl ... | bash' reads the whole script first.

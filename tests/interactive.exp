@@ -13,7 +13,9 @@ expect "  > "                  { send "Base field: complex numbers\r" }
 expect "  > "                  { send -- "- abelian varieties are principally polarized\r" }
 expect "  > "                  { send "\r" }
 expect "  > "                  { send "~/no-such-folder-for-this-test\r" }
-expect "  > "                  { send "$archive\r" }
+# typed the way Finder inserts a dragged folder: spaces escaped, trailing space
+set dragged "[string map {{ } {\ }} $archive] "
+expect "  > "                  { send -- "$dragged\r" }
 expect "  > "                  { send "\r" }
 expect "Which will you use"    { send "3\r" }
 expect {
