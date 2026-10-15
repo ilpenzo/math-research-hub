@@ -55,6 +55,17 @@ HUB_YES=1 HUB_DIR="$WORK/hub-retry" HUB_ASSISTANTS=claude HUB_INSTALL_TOOLS=no H
 (cd "$WORK/hub-retry" && python3 tools/hub.py check > /dev/null) || fail "rerun produced a broken hub"
 pass "interrupted install leaves nothing behind; rerun succeeds"
 
+# 1d. A Windows location copied from File Explorer is converted for WSL.
+mkdir -p "$WORK/mnt/c/Users/Ada Name/OneDrive/Documents/old notes"
+_HUB_TEST_WSL_MOUNT="$WORK/mnt" HUB_YES=1 HUB_DIR="$WORK/hub-win" HUB_ASSISTANTS=claude \
+  HUB_INSTALL_TOOLS=no HUB_GIT=no \
+  HUB_ARCHIVES=$'"C:\\Users\\Ada Name\\OneDrive\\Documents\\old notes"\n' \
+  bash "$KIT/install.sh" > "$WORK/log" 2>&1 || fail "install with a Windows-style folder"
+grep -q "/c/Users/Ada Name/OneDrive/Documents/old notes" "$WORK/hub-win/hub.json" \
+  || { cat "$WORK/log"; fail "Windows-style folder location not converted"; }
+grep -q 'cd ".*hub-win" && claude' "$WORK/log" || fail "closing steps lack the one-line start command"
+pass "Windows folder location converted; one-line start command printed"
+
 # 2. The 'curl ... | bash' path: script on standard input, kit downloaded as a tarball.
 tar -czf "$WORK/kit.tar.gz" -C "$(dirname "$KIT")" --exclude .git --exclude __pycache__ "$(basename "$KIT")"
 cat "$KIT/install.sh" | KIT_URL="file://$WORK/kit.tar.gz" HUB_YES=1 HUB_DIR="$WORK/hub2" \

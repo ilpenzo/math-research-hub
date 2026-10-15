@@ -10,6 +10,31 @@ description: A self-serve guide for mathematicians. Set up AI assistants that he
 *A guide for mathematicians with no AI experience. You will need about thirty
 minutes to install and an hour to learn. No programming is required.*
 
+> **Quick start: the whole process on one screen**
+>
+> 1. Buy a plan: [Claude Pro or above](https://claude.com/pricing), or a
+>    [ChatGPT plan that includes Codex](https://help.openai.com/en/articles/11369540-codex-in-chatgpt).
+> 2. **Windows only:** first set up WSL as described under
+>    [Before you start](#before-you-start). From then on use the **Ubuntu**
+>    app, never PowerShell or the plain Terminal app.
+> 3. Open a terminal. On a Mac press Cmd+Space, type `Terminal` and press
+>    Return. On Windows open **Ubuntu** from the Start menu.
+> 4. Paste the install command from [Step 1](#step-1-install-about-15-minutes)
+>    (Mac: Cmd+V; Ubuntu: Ctrl+Shift+V), press Return, and answer the
+>    questions. Return (Enter) accepts each suggestion.
+> 5. Open a **new** terminal window. Type the start line the installer
+>    printed at the end, such as `cd ~/research-hub && claude`, and press
+>    Return. Use this same line every time you come back.
+> 6. Log in. When Claude Code asks whether you trust the folder, press the
+>    **down arrow** to choose "Yes, I trust this folder", then press Return.
+>    Return on its own means "No".
+> 7. Paste your first request and press Return: *Read START_HERE.md and
+>    AGENTS.md, then give me a ten-line tour of this hub and suggest what I
+>    should do first.*
+>
+> Each step is explained below. If something goes wrong, see
+> [Troubleshooting](#troubleshooting).
+
 ---
 
 ## What this is
@@ -54,16 +79,34 @@ record honest about what has been established.
 
 You need four things.
 
-1. **A computer running macOS or Linux.** On Windows, first install WSL
-   (Windows Subsystem for Linux, a free Microsoft component: search "install
-   WSL" on learn.microsoft.com). Then do everything below in its "Ubuntu"
-   window.
+1. **A computer running macOS or Linux, or Windows with WSL.** WSL
+   (Windows Subsystem for Linux) is a free part of Windows. To set it up
+   once:
+   1. Right-click the Start button and choose "Terminal (Admin)" (on
+      Windows 10, "Windows PowerShell (Admin)"). If Windows asks whether to
+      allow the app to make changes, click **Yes**.
+   2. Type `wsl --install` and press Enter. When it finishes, restart the
+      computer.
+   3. Open **Ubuntu** from the Start menu. When it asks for a new user name,
+      choose a short one in lowercase letters with no spaces, such as
+      `jsmith`. Then choose a password. **Nothing appears on screen while you
+      type a password; that is normal.** Write the password down.
+   4. From now on, do everything in this guide in the Ubuntu window, not in
+      PowerShell or the Terminal app.
+
+   On some computers WSL asks for the user name and password straight away,
+   or opens Ubuntu by itself after the restart. Answer as in step 3: that is
+   expected.
+
+   If `wsl --install` reports that virtualization is not enabled, follow
+   Microsoft's [instructions](https://learn.microsoft.com/en-us/windows/wsl/install).
 2. **A paid plan for at least one AI assistant.**
    - **Claude Code** (from Anthropic) needs a Claude Pro, Max, Team or
      Enterprise plan, or an Anthropic API account. The free plan does not
-     include it.
+     include it. [Claude plans](https://claude.com/pricing).
    - **Codex** (from OpenAI) needs a ChatGPT plan that includes Codex (Plus,
      Pro, Business, Edu or Enterprise), or an OpenAI API key.
+     [Which ChatGPT plans include Codex](https://help.openai.com/en/articles/11369540-codex-in-chatgpt).
 
    One is enough. With both, each can review the other's proofs, and two
    different AI systems catch more errors than one. Prices and usage limits
@@ -73,6 +116,19 @@ You need four things.
 4. **A lemma you have already proved** and know well. You will use it in
    Step 3 to see how far to trust the assistant in your area.
 
+**Never used a terminal?** Anthropic's short
+[terminal guide](https://code.claude.com/docs/en/terminal-guide) explains how
+to open one and paste a command.
+
+**About the requests in this guide.** The indented boxes are things to
+paste to the assistant, followed by Return. Replace each part in [square
+brackets], brackets included, with your own words. "[name]" means your
+project's title or its short folder name; either works.
+
+**Keys.** "Return" is the key labelled Return on a Mac and Enter on most
+other keyboards. To paste into a terminal, press Cmd+V on a Mac, or
+Ctrl+Shift+V in Ubuntu.
+
 ---
 
 ## Step 1. Install (about 15 minutes)
@@ -80,14 +136,20 @@ You need four things.
 **Open a terminal.** A terminal is a window where you type commands.
 
 - **Mac:** press Cmd+Space, type `Terminal`, press Return.
+- **Windows:** open **Ubuntu** from the Start menu (after the WSL setup
+  above).
 - **Linux:** open the "Terminal" application.
-- **Windows:** open "Ubuntu" from the Start menu.
 
-**Paste this line and press Return:**
+**Paste this line, then press Return:**
 
 ```
 curl -fsSL https://raw.githubusercontent.com/ilpenzo/math-research-hub/main/install.sh | bash
 ```
+
+**On a Mac that has never used developer tools,** a window may appear saying
+that the command requires the "command line developer tools". Click
+**Install** and wait until it finishes, which can take 10 to 20 minutes. Then
+paste the install line again and press Return.
 
 This downloads the installer from
 [github.com/ilpenzo/math-research-hub](https://github.com/ilpenzo/math-research-hub)
@@ -95,70 +157,138 @@ and runs it. If you prefer to read a script before running it, which is a
 good habit, download the repository, read `install.sh`, and run
 `bash install.sh`.
 
-**Answer the questions.** Press Return to accept the suggestion in [brackets].
+**Answer the questions.** They come in seven short sections. Press Return to
+accept the suggestion shown in [brackets]. For a yes/no question, `[Y/n]`
+means that Return answers yes; type `n` and press Return for no.
 
-1. **Your name.** It is used in notes and the changelog.
-2. **Where the hub lives.** The default is a folder called `research-hub` in
+1. **About you.** Your name, used in notes and the changelog.
+2. **Where the hub lives.** Return accepts a folder called `research-hub` in
    your home folder.
-3. **Your first project.** Give a title, such as "Rationality of cubic
-   fourfolds", and two to five capital letters to label its results
-   (`RCF-R001`, ...). You can add projects later.
-4. **The main question,** in a sentence or two (optional).
-5. **Conventions.** Spend five minutes here: this is where your expertise
+3. **Your first project.**
+   - a title, such as "Rationality of cubic fourfolds";
+   - a short folder name: press Return to accept the suggestion;
+   - two to five capital letters to label its results (`RCF-R001`, ...):
+     press Return to accept the suggestion;
+   - the main question in a sentence or two, or press Return to skip.
+4. **Conventions.** Spend five minutes here: this is where your expertise
    enters. List the things in your field that must never be left implicit,
-   one per line. Examples: "base field C unless stated", "smooth means smooth
-   over the base field", "vector bundle, not coherent sheaf", "groups are
-   finite unless stated". Every helper's instructions repeat these.
-6. **Earlier work.** Give the folders to make searchable, one per line. The
-   assistants may read them but never change them.
-7. **Which assistants.** If one is not installed, the installer offers to
-   install it with the company's official installer.
-8. **PDF search.** On a Mac with Homebrew it offers to install `pdftotext`,
-   so the assistants can search PDFs.
-9. **Codex trust** (if you chose Codex). Say yes. This lets Codex load the
-   hub's settings and helper roles; it backs up your Codex settings first.
-10. **Version history.** Say yes: a local "undo history" of the whole folder.
-    Nothing is uploaded.
+   pressing Return after each one. Examples: "base field C unless stated",
+   "smooth means smooth over the base field", "vector bundle, not coherent
+   sheaf", "groups are finite unless stated". Press Return on an empty line
+   to finish. Every helper's instructions repeat these, and you can revise
+   them later.
+5. **Your earlier work** (optional). Folders the assistants may search but
+   never change.
+   - **Mac:** drag the folder from a Finder window into the Terminal window,
+     then press Return. If your Mac asks whether Terminal may access the
+     folder, click **OK**.
+   - **Windows:** in File Explorer, open the folder and click the address
+     bar at the top so that it shows the full location (such as
+     `C:\Users\Name\OneDrive\Documents\old-notes`). Copy it with Ctrl+C,
+     paste it into Ubuntu with Ctrl+Shift+V, and press Return. The installer
+     converts it.
+   - If a folder is not found, the installer says so and lets you try again.
+     Press Return on an empty line to finish or to skip. You can add folders
+     later.
+6. **AI assistants.** Here, do not just press Return: type the number that
+   matches your plan, 1 (Claude Code), 2 (Codex) or 3 (both), and press
+   Return. Then, only where they apply:
+   - an offer to install a missing assistant with its official installer:
+     answer yes;
+   - on a Mac with Homebrew (a common tool for installing programs), an offer
+     to install `pdftotext` so the assistants can search PDFs: answer yes.
+     Without Homebrew this question does not appear;
+   - if you chose Codex, an offer to mark the hub as trusted for Codex: answer
+     yes. It backs up your Codex settings first.
+7. **Version history.** Answer yes: a local "undo history" of the whole
+   folder. Nothing is uploaded.
 
-The installer shows a summary, asks for confirmation, creates the folder, runs
-a self-test and prints your next steps. It changes nothing else on your
-computer except the installations you agreed to.
+The installer then shows a summary and asks "Create the hub now?". If
+anything in the summary is wrong, type `n`, press Return, and paste the
+install line again. Otherwise press Return. The installer creates the folder,
+runs a self-test and prints your next steps. It changes nothing else on your
+computer except the installations you agreed to. Installing Claude Code shows
+no progress while it downloads; wait for it to finish.
+
+**If the installer stops halfway** (a lost connection, a closed window, an
+error), nothing is left behind. Fix the problem it reports, if any, and run
+the same command again.
 
 ---
 
 ## Step 2. Your first session (about 10 minutes)
 
 1. **Open a new terminal window,** so that newly installed programs are
-   found.
-2. **Start the assistant in your hub:**
+   found. Mac: press Cmd+N in Terminal. Windows: open Ubuntu again from the
+   Start menu.
+2. **Start the assistant in your hub.** At the end, the installer printed a
+   start line. If you accepted the suggested folder, it is:
 
    ```
-   cd ~/research-hub
-   claude
+   cd ~/research-hub && claude
    ```
 
-   (Type `codex` instead if you chose Codex.)
-3. **Log in.** Claude Code opens your browser to sign in. Codex asks you to
-   choose "Sign in with ChatGPT".
-4. **Trust the folder.** When asked whether you trust this folder, answer
-   **yes**. Until you do, the hub's settings, including the protection of
-   your archives, are ignored.
-5. **Ask for a tour.** Paste:
+   Type it and press Return. (With Codex, the line ends in `codex` instead;
+   use one assistant at a time.) **Use this same line every time you come
+   back to the hub.** Typing just `claude` would start the assistant in the
+   wrong folder, without the hub's rules.
+
+3. **First-time screens in Claude Code.** These appear only once.
+   - "Choose the text style that looks best with your terminal": press
+     Return.
+   - "Select login method": choose **1. Claude account with subscription**
+     and press Return.
+   - Your browser opens. Sign in to your Claude account, approve the request,
+     then come back to the terminal window. If no browser opens (common on
+     Windows), the terminal shows a long web address. Select it with the
+     mouse, copy it with Ctrl+Shift+C, and paste it into your browser. In a
+     terminal, Ctrl+C on its own stops the program instead of copying. If the
+     browser then shows a code, copy it, paste it into the terminal with
+     Ctrl+Shift+V, and press Return.
+   - If other one-time screens appear, press Return to accept the
+     suggestion.
+   - "Quick safety check: Is this a project you created or one you trust?"
+     Press the **down arrow** to choose **"Yes, I trust this folder"**, then
+     press Return. Return on its own chooses "No, exit" and closes Claude
+     Code; if that happens, type the start line again. First check that the
+     folder shown under "Accessing workspace" ends in `research-hub` (or the
+     folder you chose); if it shows another folder, choose "No, exit" and use
+     the start line. The same screen warns that
+     the folder pre-approves some commands and adds a folder to the
+     workspace. Those are the hub's own commands and your archive folders,
+     so this is expected. Until you trust the folder, the hub's settings,
+     including the protection of your archives, are ignored.
+4. **First-time screens in Codex.** At "Sign in with ChatGPT", press Return
+   and sign in in your browser. If no browser opens (common on Windows),
+   choose **2. Sign in with Device Code** instead and follow the
+   instructions it shows. If Codex asks "Trust this folder?" (it may
+   not, if the installer already recorded this), choose **Trust and
+   continue** and press Return. Its warning that folder settings can run code
+   is expected: those settings are the hub's own, which you just installed.
+5. **Ask for a tour.** Paste this and press Return:
 
    > Read START_HERE.md and AGENTS.md, then give me a ten-line tour of this
    > hub and suggest what I should do first.
 
 **Permission prompts.** The assistant asks before it runs a command or changes
-a file. A good policy:
+a file. Each prompt is a short menu: use the arrow keys to choose, then press
+Return. Esc means no. A good policy:
 
 - **approve** the hub's own commands (`python3 tools/hub.py ...`), reading
   files, and edits to notes inside the hub;
 - **think twice** about anything that installs software, deletes files, or
   reaches outside the hub folder;
-- **decline** anything you did not ask for. The assistant will adjust.
+- **decline** anything you did not ask for. The assistant will adjust;
+- **if you cannot tell what a request does,** decline it, then type in the
+  message box: "Explain in plain English what that would do and why." Press
+  Return, read the answer, and decide.
 
-To stop it mid-task, press **Esc**. To leave, press **Ctrl+C** twice. Nothing
-is lost, because the work is in the files.
+The hub's own commands and saving to the local version history are
+pre-approved, so most prompts you see concern new programs or files. Sending
+anything to the internet with git is blocked outright.
+
+To stop the assistant mid-task, press **Esc**. To leave, type `/exit` or press
+**Ctrl+C** twice. Nothing is lost, because the work is in the files.
 
 ---
 
@@ -247,7 +377,8 @@ once. To change this, add "budget: 5 helper jobs" to the request.
 > Close out this session following AGENTS.md, then give me a five-line summary
 > of what changed.
 
-**Check the memory.** Quit, start a fresh session, and ask:
+**Check the memory.** Quit (type `/exit`), start a fresh session with your
+start line, and ask:
 
 > Where does project [name] stand?
 
@@ -371,14 +502,37 @@ they still load the hub correctly.
 ## Troubleshooting
 
 - **"command not found: claude" (or codex).** Open a new terminal window. If
-  it persists, add `export PATH="$HOME/.local/bin:$PATH"` to `~/.zshrc` (Mac)
-  or `~/.bashrc` (Linux) and open a new window.
-- **The installer says Python is missing.** On a Mac run
-  `xcode-select --install`. On Ubuntu run `sudo apt install python3`. Then
-  run the installer again.
-- **You answered "no" to the trust question.** Quit and start the assistant
-  again in the hub folder. If it does not ask again, say so to the assistant
-  and it will explain how to change the setting.
+  it persists, paste the line below, press Return, open a new window, and
+  type your start line again.
+  - Mac: `echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc`
+  - Windows (Ubuntu) and Linux:
+    `echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc`
+- **The installer says Python is missing.** On a Mac, click **Install** if a
+  window offers the "command line developer tools"; otherwise type
+  `xcode-select --install` and press Return. On Ubuntu type
+  `sudo apt install python3` and press Return, then your Ubuntu password
+  (it stays invisible). When that finishes, run the installer again.
+- **The browser did not open for the login.** Copy the web address shown in
+  the terminal (select it, then Ctrl+Shift+C on Windows or Cmd+C on a Mac),
+  paste it into your browser, and follow the instructions there.
+- **Claude Code closed at the "Quick safety check".** Return on its own
+  means "No, exit". Type your start line again (such as
+  `cd ~/research-hub && claude`), press the down arrow to choose "Yes, I
+  trust this folder", then press Return.
+- **Claude Code says your plan does not include it.** Claude Code needs a
+  paid plan (Pro or above); the free plan does not include it. After
+  upgrading, type `/login` inside Claude Code.
+- **Typing a password in Terminal shows nothing.** That is normal: the
+  characters are hidden. Type the password and press Return.
+- **The installer stopped halfway.** Nothing was created. Run the same
+  command again.
+- **The assistant cannot find START_HERE.md, or seems not to know the hub.**
+  It was probably started in another folder. Type `/exit`, then use your
+  start line, `cd ~/research-hub && claude` (or the one the installer
+  printed).
+- **"already exists and is not empty".** A hub is already in that folder.
+  Choose a different folder name when the installer asks, or use the hub you
+  have.
 - **The assistant changed something it should not have.** If you kept a
   version history, ask: "Show me what changed since the last commit and undo
   the edit to [file]." The catalog also keeps automatic backups.

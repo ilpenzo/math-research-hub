@@ -11,7 +11,7 @@
 #
 # Unattended use (testing): HUB_YES=1 accepts defaults; HUB_DIR, HUB_OWNER,
 # HUB_PROJECT_TITLE, HUB_PROJECT_SLUG, HUB_PREFIX, HUB_DESCRIPTION,
-# HUB_CONVENTIONS, HUB_ARCHIVES (paths separated by ':'), HUB_ASSISTANTS
+# HUB_CONVENTIONS, HUB_ARCHIVES (one path per line, or separated by ':'), HUB_ASSISTANTS
 # (claude, codex, both), HUB_INSTALL_TOOLS, HUB_CODEX_TRUST and HUB_GIT
 # (yes/no) override the answers. CODEX_HOME is honoured as Codex does.
 
@@ -221,7 +221,8 @@ if [ "$OS" = "Darwin" ]; then
   note "Easiest: drag a folder from a Finder window into this window, then press Return."
   note "If your Mac asks whether Terminal may access a folder, click OK (Allow)."
 elif grep -qi microsoft /proc/version 2>/dev/null; then
-  note "Windows folders are written like  /mnt/c/Users/YOURNAME/Documents/old-notes"
+  note "In File Explorer, open the folder, click the address bar, copy the location (Ctrl+C),"
+  note "then paste it here with Ctrl+Shift+V and press Return."
 fi
 note "Example: ~/Documents/research/old-notes   (you can also add folders later)"
 ARCHIVES=()
@@ -229,14 +230,18 @@ ARCHIVES=()
 # trailing space that Finder produces when a folder is dragged in.
 add_archive() {
   local raw="$1" clean
-  clean="$("$PY" -c '
-import shlex, sys
+  clean="$(WSL_MOUNT="${_HUB_TEST_WSL_MOUNT:-/mnt}" "$PY" -c '
+import os, re, shlex, sys
 s = sys.argv[1].strip()
-try:
-    parts = shlex.split(s)
-    s = parts[0] if len(parts) == 1 else s
-except ValueError:
-    pass
+win = re.fullmatch(r"[\"\x27]?([A-Za-z]):[\\/](.*?)[\"\x27]?", s)
+if win:   # C:\Users\Name\Documents, as copied from File Explorer
+    s = os.environ["WSL_MOUNT"] + "/" + win.group(1).lower() + "/" + win.group(2).replace("\\", "/")
+else:
+    try:
+        parts = shlex.split(s)
+        s = parts[0] if len(parts) == 1 else s
+    except ValueError:
+        pass
 print(s)' "$raw")"
   [ -z "$clean" ] && return 0
   clean="$(expand_path "$clean")"
@@ -245,7 +250,11 @@ print(s)' "$raw")"
   return 1
 }
 if [ -n "${HUB_ARCHIVES:-}" ]; then
-  while IFS= read -r line; do add_archive "$line" || true; done <<< "$(printf '%s' "$HUB_ARCHIVES" | tr ':' '\n')"
+  case "$HUB_ARCHIVES" in
+    *$'\n'*) ARCHIVE_LIST="$HUB_ARCHIVES" ;;                       # one per line
+    *) ARCHIVE_LIST="$(printf '%s' "$HUB_ARCHIVES" | tr ':' '\n')" ;;   # or separated by ':'
+  esac
+  while IFS= read -r line; do add_archive "$line" || true; done <<< "$ARCHIVE_LIST"
 elif [ "$INTERACTIVE" = "1" ]; then
   printf '%s%s%s\n' "$B" "Folders to register as read-only archives" "$N" > /dev/tty
   note "(One per line. Press Return on an empty line to finish.)" > /dev/tty
@@ -426,17 +435,17 @@ fi
 head_ "${G}Your hub is ready:${N}${B} $HUB_PATH"
 say ""
 say "Next steps:"
-say "  1. Open a new terminal window (so newly installed programs are found) and type:"
-say "       cd \"$HUB_PATH\""
+say "  1. Open a new terminal window (so newly installed programs are found). Type this"
+say "     line and press Return; use the same line every time you come back to the hub:"
 if [ "$USE_CLAUDE" = 1 ]; then
-  say "       claude"
+  say "       cd \"$HUB_PATH\" && claude"
   say "     The first time, it opens your browser to log in to your Claude account. When it"
   say "     asks whether you trust this folder, press the DOWN ARROW to choose"
   say "     \"Yes, I trust this folder\", then Return (Return alone means \"No, exit\")."
 fi
 if [ "$USE_CODEX" = 1 ]; then
-  [ "$USE_CLAUDE" = 1 ] && say "     To use Codex instead, type this in place of claude (not both):"
-  say "       codex"
+  [ "$USE_CLAUDE" = 1 ] && say "     To use Codex instead (not both at once), the line is:"
+  say "       cd \"$HUB_PATH\" && codex"
   say "     The first time, choose \"Sign in with ChatGPT\". If asked whether to trust"
   say "     this folder, answer yes so it loads the hub's helper roles and settings."
 fi
