@@ -3,7 +3,7 @@
 set timeout 120
 lassign $argv installer kit_url hub archive
 spawn /bin/bash -c "cat '$installer' | KIT_URL='$kit_url' bash"
-expect "Your name"             { send "Grace Hopper\r" }
+expect "Your name"             { send "Test Owner\r" }
 expect "Folder for your hub"   { send "$hub\r" }
 expect "Project title"         { send "Hodge classes on abelian fourfolds\r" }
 expect "Short folder name"     { send "\r" }
