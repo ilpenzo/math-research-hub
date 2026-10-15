@@ -10,6 +10,10 @@ description: A self-serve guide for mathematicians. Set up AI assistants that he
 *A guide for mathematicians with no AI experience. You will need about thirty
 minutes to install and an hour to learn. No programming is required.*
 
+[Download this guide as a PDF](research-hub-guide.pdf) to print it or attach
+it to an email.
+{: .no-print}
+
 > **Quick start: the whole process on one screen**
 >
 > 1. Buy a plan: [Claude Pro or above](https://claude.com/pricing), or a
