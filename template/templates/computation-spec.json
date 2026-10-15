@@ -1,0 +1,13 @@
+{
+  "command": "sage enumerate.sage --max-degree 12 > output.txt",
+  "environment": "SageMath 10.6 on macOS 15, Python 3.12",
+  "domain": "All examples of degree at most 12 over the rationals",
+  "exhaustiveness": "Exhaustive within the domain; nothing outside it was tested",
+  "seed": null,
+  "notes": "What the run was for and how to read the output",
+  "files": [
+    {"from": "/path/to/enumerate.sage", "path": "enumerate.sage", "role": "source"},
+    {"from": "/path/to/parameters.json", "path": "parameters.json", "role": "input"},
+    {"from": "/path/to/output.txt", "path": "output.txt", "role": "output"}
+  ]
+}

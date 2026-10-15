@@ -1,0 +1,25 @@
+{
+  "id": "auto",
+  "project": "PROJECT-NAME",
+  "kind": "result",
+  "title": "Short precise title",
+  "topics": ["topic"],
+  "status": "reported",
+  "evidence_level": "draft-proof",
+  "novelty": "unassessed",
+  "statement": "One precise claim, with assumptions separated from conclusions.",
+  "hypotheses": ["Field and characteristic", "Category of objects", "Other required hypotheses"],
+  "limitations": "What this does not establish, including review and novelty gaps.",
+  "evidence": [
+    {
+      "root": "hub",
+      "path": "projects/PROJECT-NAME/investigations/DATE-topic/NOTE.md",
+      "locator": "Section 'Work', Lemma 2",
+      "sha256": "auto"
+    }
+  ],
+  "depends_on": [],
+  "supersedes": [],
+  "subsumed_by": [],
+  "source_refs": []
+}

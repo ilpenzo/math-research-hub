@@ -1,0 +1,111 @@
+% Default skeleton for research-hub papers (math-paper-writing skill).
+% Every TODO must be replaced; check_paper.py fails while any remain.
+% Remove these comment lines from the release copy.
+\documentclass[11pt,reqno]{amsart}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb,amsthm,lmodern}
+\usepackage{mathtools}
+\usepackage[margin=1in]{geometry}
+\usepackage{microtype}
+% \usepackage{tikz-cd} % only if the paper has commutative diagrams
+\usepackage{hyperref}
+\hypersetup{hidelinks,
+ pdftitle={TODO title},
+ pdfauthor={TODO author}}
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{conjecture}[theorem]{Conjecture}
+\newtheorem{question}[theorem]{Question}
+% Lettered headline results (Theorem A, B) for the introduction:
+\newtheorem{introtheorem}{Theorem}
+\renewcommand{\theintrotheorem}{\Alph{introtheorem}}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{example}[theorem]{Example}
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+\newcommand{\PP}{\mathbb{P}}
+\newcommand{\OO}{\mathcal{O}}
+\newcommand{\Db}{\mathrm{D}^{\mathrm{b}}}
+\DeclareMathOperator{\Hom}{Hom}
+\DeclareMathOperator{\Ext}{Ext}
+\DeclareMathOperator{\End}{End}
+\DeclareMathOperator{\rk}{rk}
+\DeclareMathOperator{\coker}{coker}
+\DeclareMathOperator{\Pic}{Pic}
+\newcommand{\sExt}{\mathcal{E}\!\mathit{xt}}
+
+\begin{document}
+
+\title{TODO specific title naming the object and the result}
+
+% Author block: copy from the user's latest approved preprint and confirm
+% with the user. Never invent an affiliation, address or identifier.
+\author{TODO author}
+\address{TODO address}
+\email{TODO email}
+\date{}
+\subjclass[2020]{Primary TODO; Secondary TODO}
+\keywords{TODO keywords}
+
+\begin{abstract}
+TODO 80--150 words: state the main result in words with its hypotheses,
+then the method if distinctive, then the secondary results. No citations.
+\end{abstract}
+
+\maketitle
+
+\section{Introduction}
+
+TODO one or two paragraphs: the problem and why it matters.
+
+\begin{theorem}\label{thm:main}
+TODO exact statement, identical to the statement proved in
+Section~\ref{sec:proof}.
+\end{theorem}
+
+\subsection{Relation to earlier work}
+TODO who proved what, in what generality, with locators; what is new here
+and which difficulty earlier methods could not handle.
+
+\subsection{Idea of the proof}
+TODO one or two paragraphs naming the mechanism; say which step is new.
+
+\subsection{Limits and questions}
+TODO examples showing that the hypotheses are needed; what is not proved.
+
+\subsection{Organization}
+TODO a roadmap by section number, flagging routine sections and appendices.
+
+\subsection{Conventions}
+TODO base field and characteristic, the meaning of ``variety'', derived
+functors, and the ordering conventions used (see the skill's
+references/algebraic-geometry.md).
+
+\section{TODO preliminaries}\label{sec:prelim}
+
+\section{Proof of Theorem~\ref{thm:main}}\label{sec:proof}
+
+\begin{proof}[Proof of Theorem~\ref{thm:main}]
+TODO assemble the lemmas, citing each by number.
+\end{proof}
+
+\appendix
+\section{TODO routine verifications}\label{app:routine}
+
+\subsection*{Acknowledgements}
+TODO the user's decision, including any AI-assistance statement.
+
+\begin{thebibliography}{TODO}
+% Only entries matching a dossier row or a hub source record.
+% Cite with locators: \cite[Theorem~3.5]{Key}.
+\bibitem[TODO]{TODO}
+TODO author, \emph{title}, journal \textbf{volume} (year), pages.
+\end{thebibliography}
+
+\end{document}

@@ -1,0 +1,31 @@
+# Drives install.sh through a real terminal, answering like a person would.
+# Usage: expect interactive.exp INSTALL_SH KIT_URL HUB_DIR ARCHIVE_DIR
+set timeout 120
+lassign $argv installer kit_url hub archive
+spawn /bin/bash -c "cat '$installer' | KIT_URL='$kit_url' bash"
+expect "Your name"             { send "Grace Hopper\r" }
+expect "Folder for your hub"   { send "$hub\r" }
+expect "Project title"         { send "Hodge classes on abelian fourfolds\r" }
+expect "Short folder name"     { send "\r" }
+expect "capital letters"       { send "hc\r" }
+expect "main question"         { send "Are Weil classes algebraic?\r" }
+expect "  > "                  { send "Base field: complex numbers\r" }
+expect "  > "                  { send -- "- abelian varieties are principally polarized\r" }
+expect "  > "                  { send "\r" }
+expect "  > "                  { send "~/no-such-folder-for-this-test\r" }
+expect "  > "                  { send "$archive\r" }
+expect "  > "                  { send "\r" }
+expect "Which will you use"    { send "3\r" }
+expect {
+  "Install Claude Code now" { send "n\r"; exp_continue }
+  "Install Codex now"       { send "n\r"; exp_continue }
+  "Install pdftotext"       { send "n\r"; exp_continue }
+  "trusted in your Codex"   { send "y\r"; exp_continue }
+  "version history with git" { send "n\r"; exp_continue }
+  "Create the hub now"      { send "\r"; exp_continue }
+  "Your hub is ready"       { exp_continue }
+  timeout                   { puts "\nTIMEOUT"; exit 1 }
+  eof
+}
+lassign [wait] pid spawnid os_error status
+exit $status

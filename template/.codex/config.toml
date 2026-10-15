@@ -1,0 +1,6 @@
+# Project settings for Codex in this research hub. Your model and approval
+# settings are inherited from your own Codex configuration.
+# PROOF_SWARM.md sets the job limits; this caps how many helpers run at once.
+[agents]
+enabled = true
+max_concurrent_threads_per_session = 2

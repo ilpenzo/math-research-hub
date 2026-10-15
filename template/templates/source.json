@@ -1,0 +1,14 @@
+{
+  "id": "auto",
+  "project": "PROJECT-NAME",
+  "citation": "A. Author, Title of paper, Journal 12 (2003), 45-67",
+  "url": "https://arxiv.org/abs/xxxx.xxxxx",
+  "version": "published version, or arXiv vN",
+  "topics": ["topic"],
+  "check_state": "lead",
+  "locator": "Theorem 3.5, printed page 52",
+  "statement": "The exact statement as checked, with all hypotheses and conventions.",
+  "use": "Where and how this hub uses it.",
+  "limitations": "What it does not give; conventions that differ from ours.",
+  "evidence": []
+}
