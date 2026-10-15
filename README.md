@@ -45,6 +45,8 @@ ChatGPT plan that includes Codex (or an OpenAI API key) for Codex.
 - `template/`: the hub skeleton that the installer copies
 - `docs/index.md`: the plain-English guide, published at
   https://ilpenzo.github.io/math-research-hub/
+  (PDF: `docs/research-hub-guide.pdf`; after changing the page, rebuild it
+  with `bash docs/build-pdf.sh` once the page is live)
 - `tests/test_install.sh`: offline installer tests: unattended, the
   `curl | bash` path, the Codex trust entry, and (with `expect`) a full
   interactive run through a terminal, plus the tool's self-tests. They work in
