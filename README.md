@@ -7,7 +7,8 @@ that keep the record honest. They search before inventing, check citations
 against the papers, remember failed attempts, and send every claimed proof to
 a reviewer that did not write it.
 
-**New to AI tools? Read the guide: [ARTICLE.md](ARTICLE.md).**
+**New to AI tools? Start with the guide:
+[Build your own research hub](https://ilpenzo.github.io/math-research-hub/).**
 
 ## Install (macOS, Linux, or Windows with WSL)
 
@@ -42,7 +43,8 @@ ChatGPT plan that includes Codex (or an OpenAI API key) for Codex.
 
 - `install.sh`: the installer
 - `template/`: the hub skeleton that the installer copies
-- `ARTICLE.md`: the plain-English guide
+- `docs/index.md`: the plain-English guide, published at
+  https://ilpenzo.github.io/math-research-hub/
 - `tests/test_install.sh`: offline installer tests: unattended, the
   `curl | bash` path, the Codex trust entry, and (with `expect`) a full
   interactive run through a terminal, plus the tool's self-tests. They work in
