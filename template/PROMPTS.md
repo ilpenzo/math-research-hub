@@ -116,3 +116,18 @@ and then:
 - Start a fresh session for unrelated work; the hub, not the chat, carries
   the memory.
 - End substantive sessions with the close-out request above.
+
+
+## Return to an earlier conversation
+
+> Recover our previous work on this question in this service. Tell me the
+> direction, decisions, results with their status, open gap and proposed next
+> step. Check for newer corrections and tell me whether native history needs
+> catch-up. Wait for my current direction before starting a new investigation.
+
+## Look for a connection
+
+> Search the hub and prepare a brief for this gap. Compare the exact objects,
+> hypotheses and maps of two plausible ingredients. Identify the first missing
+> condition, try a bounded decisive check, and save its outcome and reopening
+> condition without changing a theorem status.

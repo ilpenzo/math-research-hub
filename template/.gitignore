@@ -3,3 +3,13 @@ __pycache__/
 .DS_Store
 .hub/lock
 .hub/cache/
+
+# Native context, identities, transcripts and local semantic state stay local.
+.hub/
+.env
+.env.*
+*.pem
+*.key
+catalog/knowledge.json
+catalog/recall-config.json
+projects/*/catalog/knowledge.json

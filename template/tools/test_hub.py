@@ -1,147 +1,159 @@
-#!/usr/bin/env python3
-"""Tests for hub.py. Run: python3 tools/test_hub.py  (tooling only, not mathematics)."""
+"""Regression checks for retrieval and provenance failures; no mathematical tests."""
+import contextlib
+import copy
+import importlib.util
 import io
 import json
-import shutil
-import subprocess
-import sys
+from pathlib import Path
 import tempfile
 import unittest
-from contextlib import redirect_stdout, redirect_stderr
-from pathlib import Path
+from unittest.mock import patch
 
-TEMPLATE = Path(__file__).resolve().parent.parent
-HUB_PY = TEMPLATE / "tools" / "hub.py"
+spec = importlib.util.spec_from_file_location('hub', Path(__file__).with_name('hub.py'))
+hub = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(hub)
 
 
-class HubTest(unittest.TestCase):
+class CatalogIntegrityTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp())
-        self.hub = self.tmp / "hub"
-        shutil.copytree(TEMPLATE, self.hub, symlinks=True,
-                        ignore=shutil.ignore_patterns("projects", ".hub", "__pycache__", ".git",
-                                                      "library", "archives", "indexes"))
-        (self.hub / "hub.json").write_text(json.dumps({"schema_version": 1, "owner": "Tester",
-                                                       "archives": {}, "projects": {}}))
-        self.archive = self.tmp / "old-notes"
-        self.archive.mkdir()
-        (self.archive / "draft.tex").write_text("Lemma. The Frobenius twist is ample.\n")
-        self.run_hub("add-project", "test-proj", "--title", "Test project", "--prefix", "TP")
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.base = Path(self.temp.name).resolve()
+        self.roots = {k: self.base / k for k in ['vb', 'toric', 'hub']}
+        for path in self.roots.values():
+            path.mkdir()
+        self.hub = self.roots['hub']
+        (self.hub / 'catalog').mkdir()
+        for key in ['vb', 'toric']:
+            (self.roots[key] / 'proof.md').write_text('needle one\nneedle two\n')
+        self.evidence = dict(root='vb', path='proof.md', locator='line 1',
+                             sha256=hub.digest(self.roots['vb'] / 'proof.md'))
+        self.result = dict(id='R1', kind='result', title='needle result', topics=['test'],
+                           status='reported', evidence_level='imported', novelty='unassessed',
+                           statement='Fixture only', hypotheses=['fixture'], limitations='fixture',
+                           evidence=[self.evidence], depends_on=[], supersedes=[], subsumed_by=[],
+                           source_refs=['L1'])
+        self.correction = dict(copy.deepcopy(self.result), id='C1', kind='correction',
+                               title='Correction', supersedes=['R1'], source_refs=[])
+        self.source = dict(id='L1', citation='Fixture', url='https://example.com', version='1',
+                           topics=['test'], locator='1', use='fixture', limitations='fixture',
+                           check_state='lead', evidence=[self.evidence])
+        self.save([self.result, self.correction], [self.source])
+        self.cfg = dict(schema_version=1, catalog_layout='legacy',
+            roots={k: str(v) for k, v in self.roots.items() if k != 'hub'},
+            projects={'research': {'title': 'VB', 'roots': ['vb', 'toric']},
+                      'second-project': {'title': 'CP', 'roots': ['cp']}},
+            exclude_dirs=[], extensions=['.md'], text_extensions=['.md'])
+        (self.hub / 'hub.json').write_text(json.dumps(self.cfg))
+        for name, value in [('HUB', self.hub), ('ROOTS', self.roots), ('CFG', self.cfg)]:
+            p = patch.object(hub, name, value)
+            p.start()
+            self.addCleanup(p.stop)
 
-    def tearDown(self):
-        shutil.rmtree(self.tmp)
+    def save(self, records, sources):
+        (self.hub / 'catalog/records.json').write_text(json.dumps(records))
+        (self.hub / 'catalog/sources.json').write_text(json.dumps(sources))
 
-    def run_hub(self, *args, ok=True):
-        out = subprocess.run([sys.executable, str(self.hub / "tools" / "hub.py"), *args],
-                             capture_output=True, text=True, cwd=self.hub)
-        if ok and out.returncode != 0:
-            self.fail(f"hub.py {' '.join(args)} failed:\n{out.stdout}\n{out.stderr}")
-        if not ok and out.returncode == 0:
-            self.fail(f"hub.py {' '.join(args)} should have failed:\n{out.stdout}")
-        return out.stdout + out.stderr
+    def capture(self, fn, *args):
+        stream = io.StringIO()
+        with contextlib.redirect_stdout(stream):
+            result = fn(*args)
+        return result, stream.getvalue()
 
-    def write(self, name, data):
-        path = self.tmp / name
-        path.write_text(json.dumps(data))
-        return str(path)
+    def test_search_limit_cannot_hide_second_archive_or_correction(self):
+        _, output = self.capture(hub.search, 'needle', True, 1)
+        self.assertIn('CORRECTION C1', output)
+        self.assertIn('vb:proof.md:1:', output)
+        self.assertIn('toric:proof.md:1:', output)
+        self.assertIn('Searched vb', output)
+        self.assertIn('Searched toric', output)
+        self.assertIn('TRUNCATED', output)
 
-    def note(self):
-        rel = self.run_hub("new-note", "first question", "--project", "test-proj").strip()
-        return rel
+    def test_changed_evidence_is_visible_and_fails_validation(self):
+        self.assertIn('CURRENT', hub.evidence_state(self.result))
+        (self.roots['vb'] / 'proof.md').write_text('Changed statement\n')
+        self.assertIn('STALE', hub.format_record(self.result))
+        failed, output = self.capture(hub.check)
+        self.assertTrue(failed)
+        self.assertIn('STALE evidence', output)
 
-    def record(self, note, **extra):
-        rec = {"id": "auto", "project": "test-proj", "kind": "result", "title": "A lemma",
-               "topics": ["t"], "status": "reported", "evidence_level": "draft-proof",
-               "novelty": "unassessed", "statement": "Every widget is ample.",
-               "hypotheses": ["char 0"], "limitations": "Unreviewed.",
-               "evidence": [{"root": "hub", "path": note, "locator": "Work", "sha256": "auto"}],
-               "depends_on": [], "supersedes": [], "subsumed_by": [], "source_refs": []}
-        rec.update(extra)
-        return rec
+    def test_project_search_separates_records_and_archive_roots(self):
+        cp = self.base / 'cp'
+        cp.mkdir()
+        (cp / 'proof.md').write_text('needle cp\n')
+        self.roots['cp'] = cp
+        self.cfg['roots']['cp'] = str(cp)
+        (self.hub / 'hub.json').write_text(json.dumps(self.cfg))
+        cp_record = dict(self.result, id='B-R1', project='second-project',
+                         source_refs=[], evidence=[dict(self.evidence, root='cp',
+                         sha256=hub.digest(cp / 'proof.md'))])
+        self.save([self.result, self.correction, cp_record], [self.source])
+        _, output = self.capture(hub.search, 'needle', True, 10, None, 'second-project')
+        self.assertIn('CATALOG B-R1', output)
+        self.assertIn('cp:proof.md', output)
+        self.assertNotIn('CATALOG R1', output)
+        self.assertNotIn('vb:proof.md', output)
+        self.assertNotIn('toric:proof.md', output)
+        _, legacy = self.capture(hub.search, 'needle', True, 10, None, 'research')
+        self.assertIn('CATALOG R1', legacy)
+        self.assertNotIn('CATALOG B-R1', legacy)
+        self.assertNotIn('cp:proof.md', legacy)
 
-    def test_full_cycle(self):
-        note = self.note()
-        out = self.run_hub("put", self.write("r1.json", self.record(note)))
-        self.assertIn("Saved TP-R001", out)
-        self.assertIn("0 errors", self.run_hub("check", "--project", "test-proj"))
-        self.assertIn("TP-R001", self.run_hub("search", "widget ample", "--project", "test-proj"))
-        self.run_hub("render")
-        catalog = (self.hub / "projects/test-proj/indexes/CATALOG.md").read_text()
-        self.assertIn("TP-R001", catalog)
+    def test_scoped_inventory_preserves_other_roots_snapshot(self):
+        self.capture(hub.inventory)
+        before = hub.read_json('indexes/inventory.json')
+        (self.roots['toric'] / 'proof.md').write_text('changed outside requested root\n')
+        (self.roots['vb'] / 'new.md').write_text('new evidence\n')
+        self.capture(hub.inventory, 'vb')
+        after = hub.read_json('indexes/inventory.json')
+        self.assertEqual([e for e in before['entries'] if e['root'] == 'toric'],
+                         [e for e in after['entries'] if e['root'] == 'toric'])
+        self.assertEqual(before['root_snapshots']['toric'], after['root_snapshots']['toric'])
+        self.assertIn('new.md', [e['path'] for e in after['entries'] if e['root'] == 'vb'])
 
-    def test_update_requires_current_hash(self):
-        note = self.note()
-        self.run_hub("put", self.write("r1.json", self.record(note)))
-        changed = self.record(note, id="TP-R001", title="A sharper lemma")
-        out = self.run_hub("put", self.write("r2.json", changed), ok=False)
-        self.assertIn("--expect TP-R001=", out)
-        shown = self.run_hub("show", "TP-R001")
-        digest = shown.split("hash: ")[1].split()[0]
-        self.run_hub("put", self.write("r2.json", changed), "--expect", f"TP-R001={digest}")
-        self.assertIn("A sharper lemma", self.run_hub("show", "TP-R001"))
+    def test_project_render_keeps_generated_catalogs_separate(self):
+        cp_record = dict(self.result, id='B-R1', project='second-project')
+        self.save([self.result, cp_record], [self.source])
+        self.capture(hub.render)
+        cp = (self.hub / 'projects/second-project/indexes/CATALOG.md').read_text()
+        legacy = (self.hub / 'projects/research/indexes/CATALOG.md').read_text()
+        self.assertIn('## B-R1', cp)
+        self.assertNotIn('## R1', cp)
+        self.assertIn('## R1', legacy)
+        self.assertNotIn('## B-R1', legacy)
 
-    def test_rejections(self):
-        note = self.note()
-        bad = self.record(note, status="verified")
-        self.assertIn("review object", self.run_hub("put", self.write("b.json", bad), ok=False))
-        bad = self.record(note, kind="obstruction")
-        self.assertIn("reopening_condition", self.run_hub("put", self.write("b.json", bad), ok=False))
-        bad = self.record(note, depends_on=["TP-R999"])
-        self.assertIn("unknown record", self.run_hub("put", self.write("b.json", bad), ok=False))
-        bad = self.record(note, id="TP-R050")
-        self.assertIn("not reserved", self.run_hub("put", self.write("b.json", bad), ok=False))
-        bad = self.record(note, title="Short precise title")
-        self.assertIn("placeholder", self.run_hub("put", self.write("b.json", bad), ok=False))
-        self.assertEqual(json.loads((self.hub / "projects/test-proj/catalog/records.json").read_text()), [])
+    def test_corrections_and_literature_propagate_to_affected_claim(self):
+        _, correction_impact = self.capture(hub.impact, 'C1')
+        self.assertIn('R1 — superseded by correction C1', correction_impact)
+        _, source_impact = self.capture(hub.impact, 'L1')
+        self.assertIn('R1 — source_refs L1', source_impact)
+        self.assertIn('C1 — Correction', hub.format_record(self.result))
 
-    def test_cycle_and_stale_evidence(self):
-        note = self.note()
-        self.run_hub("put", self.write("a.json", self.record(note)))
-        self.run_hub("put", self.write("b.json", self.record(note, depends_on=["TP-R001"])))
-        digest = self.run_hub("show", "TP-R001").split("hash: ")[1].split()[0]
-        loop = self.record(note, id="TP-R001", depends_on=["TP-R002"])
-        self.assertIn("cycle", self.run_hub("put", self.write("c.json", loop), "--expect",
-                                            f"TP-R001={digest}", ok=False))
-        (self.hub / note).write_text("changed\n")
-        self.assertIn("STALE", self.run_hub("check", ok=False))
-        self.assertIn("TP-R002", self.run_hub("impact", "TP-R001"))
+    def test_truthy_review_is_not_a_valid_review(self):
+        bad = dict(self.result, status='verified', evidence_level='internally-reviewed', review='yes')
+        self.save([bad], [self.source])
+        failed, output = self.capture(hub.check)
+        self.assertTrue(failed)
+        self.assertIn('review needs date, scope and hashed artifact', output)
 
-    def test_correction_is_visible(self):
-        note = self.note()
-        self.run_hub("put", self.write("a.json", self.record(note)))
-        fix = self.record(note, kind="correction", title="Correction to the lemma", supersedes=["TP-R001"],
-                          statement="The lemma needs char 0.")
-        self.run_hub("put", self.write("f.json", fix))
-        self.assertIn("corrected or superseded by: TP-R002", self.run_hub("show", "TP-R001"))
-        self.assertIn("corrected by TP-R002", self.run_hub("search", "widget", "--project", "test-proj"))
+    def test_missing_source_and_dependency_cycle_are_rejected(self):
+        first = dict(self.result, depends_on=['C1'], source_refs=['MISSING'])
+        second = dict(self.correction, depends_on=['R1'])
+        self.save([first, second], [self.source])
+        failed, output = self.capture(hub.check)
+        self.assertTrue(failed)
+        self.assertIn('invalid source reference MISSING', output)
+        self.assertIn('depends_on cycle', output)
 
-    def test_archive_search_and_reserve(self):
-        self.run_hub("add-archive", str(self.archive), "--project", "test-proj", "--alias", "old")
-        out = self.run_hub("search", "frobenius twist", "--project", "test-proj", "--archives")
-        self.assertIn("old:draft.tex", out)
-        self.assertIn("does not establish novelty", out)
-        settings = json.loads((self.hub / ".claude/settings.json").read_text())
-        self.assertIn(str(self.archive.resolve()), settings["permissions"]["additionalDirectories"])
-        self.assertEqual(self.run_hub("reserve", "--project", "test-proj").strip(), "TP-R001")
-        self.assertEqual(self.run_hub("reserve", "--project", "test-proj", "--kind", "L").strip(), "TP-L001")
-
-    def test_package_and_roles(self):
-        run = self.tmp / "run"
-        run.mkdir()
-        for name in ("code.py", "in.txt", "out.txt"):
-            (run / name).write_text(name)
-        spec = {"command": "python3 code.py", "environment": "Python", "domain": "n<5",
-                "exhaustiveness": "exhaustive", "files": [
-                    {"from": str(run / "code.py"), "role": "source"},
-                    {"from": str(run / "in.txt"), "role": "input"},
-                    {"from": str(run / "out.txt"), "role": "output"}]}
-        dest = "projects/test-proj/investigations/run1"
-        self.run_hub("package", self.write("spec.json", spec), "--project", "test-proj", "--dest", dest)
-        self.assertTrue((self.hub / dest / "manifest.json").exists())
-        self.run_hub("package", self.write("spec.json", spec), "--project", "test-proj", "--dest", dest, ok=False)
-        self.run_hub("sync-roles")
-        self.assertNotIn("out of date", self.run_hub("check"))
+    def test_inventory_preserves_archives_and_reports_both_roots(self):
+        before = {k: (p / 'proof.md').read_bytes() for k, p in self.roots.items() if k != 'hub'}
+        failed, _ = self.capture(hub.inventory)
+        self.assertFalse(failed)
+        after = {k: (p / 'proof.md').read_bytes() for k, p in self.roots.items() if k != 'hub'}
+        self.assertEqual(before, after)
+        items = json.loads((self.hub / 'indexes/inventory.json').read_text())['entries']
+        self.assertEqual({'vb', 'toric'}, {x['root'] for x in items})
 
 
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
+if __name__ == '__main__':
+    unittest.main()

@@ -65,3 +65,12 @@ The exact next unresolved implication:
 - [ ] Pending proof review, novelty questions and open mathematics listed separately
 
 When this investigation is finished, change the Status line above to `closed`.
+
+
+## Research memory and session checkpoint
+
+Gap ID/revision and inspected input fingerprint:
+Connections inspected, first missing condition, finite test and exact outcome:
+Episode/reminder IDs and conditions that would reopen the question:
+Session checkpoint ID/revision, result statuses and captured-through scope:
+Current request, constraints and proposed next action (no automatic restart):

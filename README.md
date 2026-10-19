@@ -23,9 +23,17 @@ creates one folder. It offers to install Claude Code and Codex with their
 official installers, and pdftotext on a Mac with Homebrew. It changes nothing
 else and uploads nothing.
 
-You need Python 3.9+ and a paid plan for at least one assistant: Claude Pro,
-Max, Team or Enterprise (or an Anthropic API account) for Claude Code; a
-ChatGPT plan that includes Codex (or an OpenAI API key) for Codex.
+You need Python 3.11+ and access to at least one supported assistant. Core catalog,
+lexical retrieval and saved-context commands use the Python standard library.
+Local semantic retrieval is optional; see [the connection guide](CONNECTIONS.md).
+
+## Returning to work
+
+In a new conversation, ask to return to your earlier investigation. The hub
+recovers saved direction, decisions, results and next steps within the same
+service, checks current corrections, and reports capture freshness. Old goals
+are never restarted automatically. See [CONNECTIONS.md](CONNECTIONS.md) for
+research memory, optional local embeddings and checkpoint setup.
 
 ## What you get
 
@@ -36,7 +44,7 @@ ChatGPT plan that includes Codex (or an OpenAI API key) for Codex.
 | `PROOF_SWARM.md` | a proof conductor plus five read-only helpers: archive scout, source checker, proof explorer, counterexample checker, proof checker |
 | `PROMPTS.md` | ready-to-paste requests for everyday work |
 | `projects/NAME/` | per-project rules, guide, topic map, changelog, catalog and one NOTE per investigation |
-| `tools/hub.py` | one standard-library Python file: validated catalog writes, search across notes, archives and PDFs, dependency impact, evidence hashes, readable indexes, computation packages |
+| `tools/hub.py` | modular tools: validated transactions, scoped search, local semantic recall, graph/comparison, Gap briefs, durable research memory, saved conversation recovery, literature and computation packages |
 | `.claude/`, `.codex/` | helper roles for both assistants, Claude Code permissions protecting the catalog and archives, the math-paper-writing skill |
 
 ## Repository layout
@@ -55,14 +63,20 @@ ChatGPT plan that includes Codex (or an OpenAI API key) for Codex.
   read-only call each, using your login) whether a fresh hub's rules, helper
   roles and paper skill load.
 
-Run `bash tests/test_install.sh`, and `bash tests/live_check.sh` after
-updating Claude Code or Codex.
+Run `python3 -m unittest discover -s template/tools -p 'test_*.py'` and
+`bash tests/test_install.sh`. The optional live check uses your assistant account
+and requires your explicit choice; it is not part of offline tests.
 
 ## After installing
 
-Everything in the hub is yours to edit, especially the rules. To use a newer
-version of the tool, copy `template/tools/hub.py` from this repository over
-your hub's `tools/hub.py` and run `python3 tools/hub.py check`.
+Everything in the hub is yours to edit, especially the rules. This release uses
+a modular tool and a version 2 manifest: **do not replace only `hub.py` in an
+older hub**. Read [UPGRADE.md](UPGRADE.md) before updating an existing installation.
+
+The public kit contains infrastructure and synthetic tests, with empty research
+catalogs created during installation. It contains no personal research results,
+retained papers, conversations, machine-specific settings or embedding caches.
+See [PRIVACY.md](PRIVACY.md).
 
 ## License
 

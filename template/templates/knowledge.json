@@ -1,0 +1,14 @@
+{
+  "kind": "gap",
+  "title": "Exact missing implication",
+  "references": [{"id": "EXISTING-ID", "relation": "input"}],
+  "provenance": [{"root": "hub", "path": "projects/NAME/investigations/DATE-TOPIC/NOTE.md", "locator": "Exact question and hypotheses", "origin": "parent interpretation"}],
+  "payload": {
+    "anchor": {"root": "hub", "path": "projects/NAME/investigations/DATE-TOPIC/NOTE.md", "locator": "Exact question and hypotheses"},
+    "question": {"text": "The exact unresolved question", "provenance": [{"root": "hub", "path": "projects/NAME/investigations/DATE-TOPIC/NOTE.md", "locator": "Exact question and hypotheses", "origin": "parent interpretation"}], "assessment": {"state": "parent-inspected", "scope": "Question formulation only"}},
+    "available_inputs": "Named actual objects and maps",
+    "missing": "First unsupported implication; unknowns remain explicit"
+  },
+  "assessment": {"state": "parent-inspected", "scope": "Memory aid, not a proof certificate"},
+  "disposition": "open"
+}

@@ -30,15 +30,15 @@ python3 tools/hub.py put /path/to/entry.json
 
 - A new entry may use `"id": "auto"`, or an ID reserved earlier with
   `python3 tools/hub.py reserve --project NAME --kind R` (or `--kind L`).
-- To change an existing entry, first run `hub.py show ID`, then make the
-  change against the version shown and pass the hash it printed:
+- To change an existing entry, first run `hub.py show ID --json`, then make the
+  change against the version shown and pass the full `entry_hash` it returned:
   `hub.py put entry.json --expect ID=HASH`. If someone changed the entry in
   the meantime, `put` refuses; re-read and merge.
 - Evidence hashes may be written as `"sha256": "auto"`; `put` fills them in
   from the current file. Only do this after actually reading that file.
 - `put` validates the whole catalog first and writes nothing if the change
-  would introduce an error. It keeps a backup in `.hub/history/` and a line
-  in `.hub/journal.jsonl`.
+  would introduce an error. It validates a prospective snapshot, checks expected hashes and commits
+  through the shared recoverable journal in `.hub/transactions/`.
 
 ### Record fields
 
@@ -136,7 +136,7 @@ python3 tools/hub.py package spec.json --project NAME \
 `templates/computation-spec.json` shows the spec: the command, environment
 (software and versions), domain, exhaustiveness, optional seed, and the files
 with their roles (`source`, `input`, `output`). The tool copies the files,
-hashes them, writes `manifest.json` and never overwrites. It does not run any
+hashes them, writes `artifact-manifest.json` and never overwrites. It does not run any
 code. Register the manifest as evidence of the record.
 
 ## Closeout
@@ -147,3 +147,19 @@ code. Register the manifest as evidence of the record.
 3. Update the project TOPICS.md row and CHANGELOG.md.
 4. Run `check --project NAME` and `render --project NAME`.
 5. Commit locally if the hub uses git.
+
+
+## Connection workspace
+
+See [CONNECTIONS.md](CONNECTIONS.md) for recall, Gap briefs, research aids,
+frontier dispositions, local semantic setup and same-service return later.
+Record claim truth, proof review, novelty and research-memory inspection separately.
+
+For larger changes, `snapshot --project NAME` captures the current bases;
+`apply BATCH.json --scope NAME --owner OWNER` publishes a validated batch.
+The batch has `changes` (relative file names to complete text) and `expected`
+(the previous SHA-256 for every changed file, null only for new files).
+Root configuration needs `--scope hub`. Never edit canonical JSON directly.
+An interrupted transaction blocks further writes; inspect its journal and use
+`recover TRANSACTION --direction finish` or `--direction rollback`. Do not
+remove lock files or use recovery to reverse an already committed change.

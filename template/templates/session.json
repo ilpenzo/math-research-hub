@@ -1,0 +1,14 @@
+{
+  "project": "NAME",
+  "context_key": "GAP-ID-or-existing-NOTE-anchor",
+  "user_direction": "Current authorized request, including its stopping condition",
+  "constraints": ["Relevant current constraints; historical allowances do not restart"],
+  "selected_direction": "Chosen approach or infrastructure task",
+  "decisions": [{"text": "Decision and reason", "provenance": "Existing NOTE locator"}],
+  "results": [{"text": "Result or exact failure", "status": "inspected-unresolved", "ids": []}],
+  "unresolved": ["Exact remaining issue"],
+  "next_action": "Proposed next action subject to the current request",
+  "references": [],
+  "locators": [],
+  "captured_through": {}
+}

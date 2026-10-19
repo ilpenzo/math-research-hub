@@ -127,11 +127,11 @@ case "$OS" in
 esac
 
 PY="$(command -v python3 || true)"
-if [ -z "$PY" ] || ! "$PY" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)' 2>/dev/null; then
+if [ -z "$PY" ] || ! "$PY" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null; then
   if [ "$OS" = "Darwin" ]; then
-    die "Python 3.9 or newer is needed. If a window offered to install the \"command line developer tools\", click Install; otherwise type   xcode-select --install   and press Return. When that finishes (it can take 10-20 minutes), run this installer again."
+    die "Python 3.11 or newer is needed. If a window offered to install the \"command line developer tools\", click Install; otherwise type   xcode-select --install   and press Return. When that finishes (it can take 10-20 minutes), run this installer again."
   else
-    die "Python 3.9 or newer is needed. On Ubuntu or Debian run   sudo apt install python3   then run this installer again."
+    die "Python 3.11 or newer is needed. On Ubuntu or Debian run   sudo apt install python3   then run this installer again."
   fi
 fi
 say "${G}ok${N}  $("$PY" --version)"
@@ -162,7 +162,7 @@ HAVE_PDFTOTEXT=0; command -v pdftotext >/dev/null 2>&1 && HAVE_PDFTOTEXT=1
 
 # ------------------------------------------------------------------ questions
 head_ "1. About you"
-DEFAULT_OWNER="$(git config --global user.name 2>/dev/null || true)"
+DEFAULT_OWNER="${HUB_OWNER:-${USER:-Researcher}}"
 if [ -z "$DEFAULT_OWNER" ] && [ "$OS" = "Darwin" ]; then DEFAULT_OWNER="$(id -F 2>/dev/null || true)"; fi
 [ -z "$DEFAULT_OWNER" ] && DEFAULT_OWNER="${USER:-Researcher}"
 OWNER="${HUB_OWNER:-}"; [ -z "$OWNER" ] && ask OWNER "Your name (used in notes and the changelog)" "$DEFAULT_OWNER"
@@ -385,6 +385,8 @@ cd /
 mv "$STAGE" "$HUB_PATH"
 FINISHED=1
 cd "$HUB_PATH"
+"$PY" tools/hub.py register-workspace >/dev/null
+"$PY" tools/hub.py render >/dev/null
 
 if [ "$USE_GIT" = 1 ]; then
   git init -q
@@ -394,7 +396,7 @@ if [ "$USE_GIT" = 1 ]; then
 fi
 
 if [ "$TRUST_CODEX" = 1 ]; then
-  CODEX_CFG="${CODEX_HOME:-$HOME/.codex}/config.toml"
+  CODEX_CFG="${HUB_CODEX_CONFIG_ROOT:-${CODEX_HOME:-$HOME/.codex}}/config.toml"
   HUB_PATH="$HUB_PATH" CODEX_CFG="$CODEX_CFG" "$PY" - <<'PYEOF' || warn "Could not update $CODEX_CFG; answer yes when Codex asks whether to trust the folder."
 import json, os, shutil
 from pathlib import Path

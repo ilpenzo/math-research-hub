@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # Installer tests. Nothing here touches your real hub, home folder settings
 # or Codex configuration: everything happens in a temporary folder, and
-# CODEX_HOME points into it. No network access and no AI calls.
+# HUB_CODEX_CONFIG_ROOT points into it. No network access and no AI calls.
 set -euo pipefail
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
-export CODEX_HOME="$WORK/codex-home"
-mkdir -p "$WORK/old-notes" "$WORK/my old notes" "$CODEX_HOME"
+export HUB_CODEX_CONFIG_ROOT="$WORK/codex-home"
+mkdir -p "$WORK/old-notes" "$WORK/my old notes" "$HUB_CODEX_CONFIG_ROOT"
 printf 'Lemma. Every widget is ample.\n' > "$WORK/old-notes/notes.tex"
-printf 'model = "example"\n' > "$CODEX_HOME/config.toml"
+printf 'model = "example"\n' > "$HUB_CODEX_CONFIG_ROOT/config.toml"
 pass() { printf 'ok  %s\n' "$*"; }
 fail() { printf 'FAIL %s\n' "$*"; [ -f "$WORK/log" ] && tail -30 "$WORK/log"; exit 1; }
 
@@ -21,7 +21,7 @@ HUB_ARCHIVES="$WORK/old-notes" HUB_ASSISTANTS=claude HUB_INSTALL_TOOLS=no HUB_GI
 (
   cd "$WORK/hub1"
   python3 tools/hub.py check > /dev/null
-  python3 tools/hub.py search "widget ample" --project widgets-and-ampleness --archives | grep -q "notes.tex"
+  python3 tools/hub.py search "widget" --project widgets-and-ampleness --archives | grep -q "notes.tex"
   grep -q "Base field: C" projects/widgets-and-ampleness/AGENTS.md
   grep -q "Widgets and ampleness" START_HERE.md
   [ "$(grep -c "Test Owner" START_HERE.md)" = 1 ]          # owner named once on the front page
@@ -30,7 +30,7 @@ HUB_ARCHIVES="$WORK/old-notes" HUB_ASSISTANTS=claude HUB_INSTALL_TOOLS=no HUB_GI
   python3 -c 'import json; json.load(open(".claude/settings.json"))'
   python3 tools/test_hub.py > "$WORK/unit.log" 2>&1 || { cat "$WORK/unit.log"; exit 1; }
 ) || fail "unattended install produced a broken hub"
-[ "$(cat "$CODEX_HOME/config.toml")" = 'model = "example"' ] || fail "Claude-only install changed the Codex settings"
+[ "$(cat "$HUB_CODEX_CONFIG_ROOT/config.toml")" = 'model = "example"' ] || fail "Claude-only install changed the Codex settings"
 pass "unattended install, hub check, archive search, tool self-tests"
 
 # 1b. Claude Code permissions: the hub's own commands pre-approved, uploading blocked.
@@ -78,10 +78,10 @@ pass "piped install (curl | bash path) with git history"
 
 # 3. Codex trust entry: added once, earlier settings kept and backed up.
 HUB2_REAL="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$WORK/hub2")"
-grep -q "^model = \"example\"" "$CODEX_HOME/config.toml" || fail "existing Codex settings were lost"
-[ "$(grep -c "\[projects.\"$HUB2_REAL\"\]" "$CODEX_HOME/config.toml")" = 1 ] || fail "trust entry missing or duplicated"
-[ -f "$CODEX_HOME/config.toml.before-research-hub" ] || fail "no backup of the Codex settings"
-python3 - "$CODEX_HOME/config.toml" <<'PYEOF' || fail "Codex settings are no longer valid TOML"
+grep -q "^model = \"example\"" "$HUB_CODEX_CONFIG_ROOT/config.toml" || fail "existing Codex settings were lost"
+[ "$(grep -c "\[projects.\"$HUB2_REAL\"\]" "$HUB_CODEX_CONFIG_ROOT/config.toml")" = 1 ] || fail "trust entry missing or duplicated"
+[ -f "$HUB_CODEX_CONFIG_ROOT/config.toml.before-research-hub" ] || fail "no backup of the Codex settings"
+python3 - "$HUB_CODEX_CONFIG_ROOT/config.toml" <<'PYEOF' || fail "Codex settings are no longer valid TOML"
 import sys
 try:
     import tomllib

@@ -5,7 +5,14 @@ description: A self-serve guide for mathematicians. Set up AI assistants that he
 
 # Build your own research hub
 
-### AI assistants that help you prove theorems, and keep an honest record of what is actually proved
+#> **Connection-workspace release:** new installations now include local recall,
+> Gap briefs, durable research memory and return-later checkpoints.
+> [Read the connection guide](https://github.com/ilpenzo/math-research-hub/blob/main/CONNECTIONS.md).
+> Python 3.11+ is required. Existing hub owners should read
+> [UPGRADE.md](https://github.com/ilpenzo/math-research-hub/blob/main/UPGRADE.md)
+> before changing their tools. The downloadable PDF describes the earlier introductory kit.
+
+## AI assistants that help you prove theorems, and keep an honest record of what is actually proved
 
 *A guide for mathematicians with no AI experience. You will need about thirty
 minutes to install and an hour to learn. No programming is required.*

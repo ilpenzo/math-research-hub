@@ -3,6 +3,11 @@
 Created {{DATE}}. Pick a project; its guide holds the current state of the
 research.
 
+Returning in a new conversation: run
+`python3 tools/hub.py context --resume --service codex --query "CURRENT REQUEST"`
+(or `--service claude-code`). Recover the same-service direction/results and
+inspect freshness before acting. No historical goal restarts automatically.
+
 <!-- projects:start -->
 <!-- projects:end -->
 
@@ -11,7 +16,7 @@ contract is in [WORKFLOW.md](WORKFLOW.md), and the proof-team rules are in
 [PROOF_SWARM.md](PROOF_SWARM.md). Ready-to-paste requests for the owner are
 in [PROMPTS.md](PROMPTS.md). The readable catalog for each project is
 `projects/NAME/indexes/CATALOG.md`, and the overview is
-[indexes/OVERVIEW.md](indexes/OVERVIEW.md).
+[indexes/CATALOG.md](indexes/CATALOG.md).
 
 ```
 python3 tools/hub.py context --project NAME     # what to read first
