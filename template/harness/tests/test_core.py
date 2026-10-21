@@ -151,12 +151,14 @@ class ServerTests(unittest.TestCase):
         config.save_settings({'autoopen': 'never', 'auto_pdf': False, 'autostart': False})
         cls.proc = subprocess.Popen([sys.executable, os.path.join(HARNESS, 'mathdesk.py'), 'serve'],
                                     env=dict(os.environ), stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-        for _ in range(100):
+        # Ready means answering HTTP, not just accepting connections (slow CI starts).
+        deadline = time.time() + 90
+        while time.time() < deadline:
             try:
-                socket.create_connection(('127.0.0.1', PORT), timeout=0.1).close()
-                break
-            except OSError:
-                time.sleep(0.1)
+                with urllib.request.urlopen('http://127.0.0.1:%d/static/favicon.svg' % PORT, timeout=5):
+                    break
+            except (OSError, urllib.error.URLError):
+                time.sleep(0.2)
         cls.token = config.token()
 
     @classmethod
@@ -175,7 +177,7 @@ class ServerTests(unittest.TestCase):
         for key, value in (headers or {}).items():
             req.add_header(key, value)
         try:
-            with urllib.request.urlopen(req, timeout=10) as response:
+            with urllib.request.urlopen(req, timeout=30) as response:
                 return response.status, response.read(), response.headers
         except urllib.error.HTTPError as err:
             return err.code, err.read(), err.headers
