@@ -27,7 +27,10 @@ MathDesk (`harness/`) is self-contained. To add it to an existing version 2
 hub, copy the kit's `template/harness/` folder into the hub as `harness/`,
 then run `python3 harness/mathdesk.py install`. It reads the catalogs and
 never writes them. `python3 harness/mathdesk.py uninstall` removes exactly
-its own hooks.
+its own hooks. The kit's AGENTS.md now asks for TeX in conversation and notes,
+in place of the earlier plain-text rule. To adopt this in an existing hub,
+replace your "Write mathematics in plain text" bullet with the kit's
+"Write mathematics as TeX" bullet.
 
 For a future update to a version 2 hub, back up your current tool and configuration
 first. Update the complete `tools/` package together, review schema/release notes,

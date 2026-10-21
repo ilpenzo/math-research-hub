@@ -51,6 +51,11 @@ KaTeX typesets the following, and the shared macros are in
 `$..$` follows Pandoc's rules, so "costs $5 and $10" stays text. The `$…$`
 switch in the top bar turns single-dollar math off.
 
+The hub's AGENTS.md asks assistants to write mathematics this way in
+conversation and notes, with `\(..\)` inline and `\[..\]` displayed. Each
+substantive response opens with a one-line plain-text conclusion, so the
+terminal stays readable. Catalog records keep plain-text mathematics.
+
 A formula KaTeX cannot handle, such as tikz-cd, shows its source and the
 error. **Typeset with LaTeX** then compiles that one formula with your TeX
 Live inside a macOS sandbox: no network, writes only in a scratch directory,

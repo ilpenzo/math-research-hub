@@ -61,6 +61,11 @@ tikz-cd, can be compiled with your own LaTeX inside a macOS sandbox. The
 server listens only on 127.0.0.1, requires a token, and loads nothing from
 the internet. See [template/harness/README.md](template/harness/README.md).
 
+The hub's rules ask assistants to write TeX in conversation and notes, with
+`\(..\)` inline and `\[..\]` displayed. Each substantive answer opens with a
+one-line plain-text conclusion, so the terminal stays readable. Catalog
+records keep plain-text mathematics.
+
 ## What you get
 
 | | |

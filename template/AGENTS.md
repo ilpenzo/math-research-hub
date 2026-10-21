@@ -43,8 +43,14 @@ work on their own.
 - Label every unproved step, assumption and conjecture. Renaming an unproved
   step does not make a reduction. Preserve unresolved disagreements instead
   of averaging them away.
-- Write mathematics in plain text in notes and terminal output; use LaTeX in
-  .tex files.
+- Write mathematics as TeX in conversation and in notes: `\(...\)` inline
+  and `\[...\]` displayed (`$...$` and `$$...$$` also render), `aligned` for
+  multiline derivations, `CD` or tikz-cd for diagrams, and code spans or
+  fences for code and literal TeX. MathDesk (harness/) typesets it in the
+  browser; shared macros are in harness/static/macros.json, and a response
+  may define new ones. Open a substantive answer with a one-line plain-text
+  conclusion so the terminal stays readable. Catalog records keep plain-text
+  mathematics; existing text is not rewritten. Use LaTeX in .tex files.
 
 ## Where things live
 
