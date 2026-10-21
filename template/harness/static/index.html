@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MathDesk</title>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/vendor/katex/katex.min.css">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="bar" id="bar">
+  <a class="brand" href="#/" title="Latest responses"><span class="brand-mark">∫</span> MathDesk</a>
+  <form class="search" id="search-form" role="search">
+    <input id="search" type="search" placeholder="Search the hub or type an ID (press /)" autocomplete="off" spellcheck="false">
+  </form>
+  <div class="bar-actions">
+    <label class="toggle" title="Treat $..$ as mathematics"><input type="checkbox" id="opt-dollar" checked> <span>$…$</span></label>
+    <button type="button" class="btn ghost" id="btn-composer" title="Scratchpad with live preview (c)">Compose</button>
+    <a class="btn ghost" href="#/notebook" id="btn-notebook" title="Pinned excerpts">Notebook <span class="count" id="pin-count">0</span></a>
+    <button type="button" class="btn ghost icon" id="btn-theme" title="Light or dark">◐</button>
+    <span class="live" id="live" title="Connection to the local server"></span>
+  </div>
+</header>
+<div class="layout">
+  <nav class="rail" id="rail" aria-label="Sessions and documents"></nav>
+  <main class="main" id="main" tabindex="-1"></main>
+  <aside class="drawer" id="drawer" hidden></aside>
+</div>
+<section class="composer" id="composer" hidden aria-label="Composer">
+  <div class="composer-head">
+    <strong>Compose</strong><span class="muted">Markdown and TeX, previewed as you type. Copy it into the terminal.</span>
+    <span class="spacer"></span>
+    <button type="button" class="btn" id="cmp-copy">Copy</button>
+    <button type="button" class="btn ghost" id="cmp-pin">Pin</button>
+    <button type="button" class="btn ghost" id="cmp-clear">Clear</button>
+    <button type="button" class="btn ghost icon" id="cmp-close" title="Close (Esc)">×</button>
+  </div>
+  <div class="composer-body">
+    <textarea id="cmp-text" spellcheck="false" placeholder="Let $X$ be a smooth projective toric variety and $\mathcal E$ a vector bundle with \[ H^1(X, \mathcal E(-1)) = 0. \]"></textarea>
+    <div class="composer-preview" id="cmp-preview"></div>
+  </div>
+</section>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="/static/vendor/katex/katex.min.js"></script>
+<script src="/static/vendor/katex/copy-tex.min.js"></script>
+<script src="/static/vendor/marked.umd.js"></script>
+<script src="/static/vendor/purify.min.js"></script>
+<script src="/static/mathsplit.js"></script>
+<script src="/static/render.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

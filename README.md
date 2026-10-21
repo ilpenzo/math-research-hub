@@ -35,6 +35,32 @@ service, checks current corrections, and reports capture freshness. Old goals
 are never restarted automatically. See [CONNECTIONS.md](CONNECTIONS.md) for
 research memory, optional local embeddings and checkpoint setup.
 
+## Reading the mathematics: MathDesk
+
+Assistants in a terminal print mathematics as raw TeX. The hub includes
+**MathDesk** (`harness/`), a local reading desk:
+
+- When an assistant turn ends anywhere in the hub, the response is typeset at
+  `http://127.0.0.1:8741/`. You do nothing: hooks capture the turn, and the
+  page updates live.
+- Every session is browsable. Cited record IDs open their catalog cards, with
+  any corrections.
+- Hub documents (NOTEs, proofs, guides) open with their mathematics rendered.
+- Pinned excerpts collect in a notebook. Any response, session, document or
+  notebook can be saved as a PDF.
+- A one-click Codex review of the notebook runs read-only, on your ChatGPT
+  login.
+
+```
+python3 harness/mathdesk.py install   # adds hooks to Claude Code and Codex (backups kept)
+python3 harness/mathdesk.py open      # opens the page
+```
+
+KaTeX typesets the mathematics offline. A diagram KaTeX cannot draw, such as
+tikz-cd, can be compiled with your own LaTeX inside a macOS sandbox. The
+server listens only on 127.0.0.1, requires a token, and loads nothing from
+the internet. See [template/harness/README.md](template/harness/README.md).
+
 ## What you get
 
 | | |
@@ -46,6 +72,7 @@ research memory, optional local embeddings and checkpoint setup.
 | `projects/NAME/` | per-project rules, guide, topic map, changelog, catalog and one NOTE per investigation |
 | `tools/hub.py` | modular tools: validated transactions, scoped search, local semantic recall, graph/comparison, Gap briefs, durable research memory, saved conversation recovery, literature and computation packages |
 | `.claude/`, `.codex/` | helper roles for both assistants, Claude Code permissions protecting the catalog and archives, the math-paper-writing skill |
+| `harness/` | MathDesk: typeset sessions, record cards, rendered documents, notebook, PDFs and Codex reviews in a local web page |
 
 ## Repository layout
 
@@ -63,7 +90,9 @@ research memory, optional local embeddings and checkpoint setup.
   read-only call each, using your login) whether a fresh hub's rules, helper
   roles and paper skill load.
 
-Run `python3 -m unittest discover -s template/tools -p 'test_*.py'` and
+Run `python3 -m unittest discover -s template/tools -p 'test_*.py'`,
+`python3 -m unittest discover -s template/harness/tests -p 'test_*.py'`,
+`node template/harness/tests/mathsplit.test.js` and
 `bash tests/test_install.sh`. The optional live check uses your assistant account
 and requires your explicit choice; it is not part of offline tests.
 

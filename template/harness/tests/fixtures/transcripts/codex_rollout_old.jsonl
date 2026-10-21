@@ -1,0 +1,25 @@
+{"timestamp":"2026-09-01T10:00:00.000Z","type":"session_meta","payload":{"id":"019e62ab-0000-7000-8000-0000000000aa","timestamp":"2026-09-01T10:00:00.000Z","cwd":"/fake/hub","originator":"codex_cli_rs","cli_version":"0.146.0","source":"cli","instructions":null}}
+{"timestamp":"2026-09-01T10:00:00.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"# AGENTS.md instructions for /fake/hub\n\n<INSTRUCTIONS>\nAGENTS SHOULD NOT APPEAR\n</INSTRUCTIONS>"}]}}
+{"timestamp":"2026-09-01T10:00:00.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<environment_context>\n  <cwd>/fake/hub</cwd>\n</environment_context>"}]}}
+{"timestamp":"2026-09-01T10:00:01.000Z","type":"turn_context","payload":{"cwd":"/fake/hub","approval_policy":"on-request","model":"m"}}
+{"timestamp":"2026-09-01T10:00:01.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"t1","model_context_window":1}}
+{"timestamp":"2026-09-01T10:00:01.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Is every finite integral domain a field?"}]}}
+{"timestamp":"2026-09-01T10:00:01.000Z","type":"event_msg","payload":{"type":"user_message","message":"Is every finite integral domain a field?","images":[],"local_images":[],"text_elements":[]}}
+{"timestamp":"2026-09-01T10:00:02.000Z","type":"response_item","payload":{"type":"reasoning","summary":[],"content":null,"encrypted_content":"ENC"}}
+{"timestamp":"2026-09-01T10:00:03.000Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{\"cmd\": \"ls /fake/hub/notes\", \"workdir\": \"/fake/hub\"}","call_id":"call_a"}}
+{"timestamp":"2026-09-01T10:00:03.000Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call_a","output":"OUTPUT SHOULD NOT APPEAR"}}
+{"timestamp":"2026-09-01T10:00:04.000Z","type":"event_msg","payload":{"type":"agent_message","message":"Looking at the notes.","phase":"commentary"}}
+{"timestamp":"2026-09-01T10:00:04.000Z","type":"response_item","payload":{"type":"message","role":"assistant","phase":"commentary","content":[{"type":"output_text","text":"Looking at the notes."}]}}
+{"timestamp":"2026-09-01T10:00:05.000Z","type":"response_item","payload":{"type":"custom_tool_call","status":"completed","call_id":"call_b","name":"apply_patch","input":"*** Begin Patch\n*** Update File: /fake/hub/notes/domains.md\n@@\n-old\n+new\n*** End Patch\n"}}
+{"timestamp":"2026-09-01T10:00:05.000Z","type":"event_msg","payload":{"type":"patch_apply_end","call_id":"call_b","turn_id":"t1","stdout":"","stderr":"","success":true,"changes":{}}}
+{"timestamp":"2026-09-01T10:00:05.000Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"call_b","output":"Done"}}
+{"timestamp":"2026-09-01T10:00:06.000Z","type":"response_item","payload":{"type":"web_search_call","status":"completed","action":{"type":"search","query":"Wedderburn little theorem"}}}
+{"timestamp":"2026-09-01T10:00:06.000Z","type":"event_msg","payload":{"type":"web_search_end","call_id":"ws","query":"Wedderburn little theorem","action":{"type":"search"}}}
+{"timestamp":"2026-09-01T10:00:07.000Z","type":"event_msg","payload":{"type":"agent_message","message":"Yes: multiplication by $a \\ne 0$ is injective, hence bijective.","phase":"final_answer"}}
+{"timestamp":"2026-09-01T10:00:07.000Z","type":"response_item","payload":{"type":"message","role":"assistant","phase":"final_answer","content":[{"type":"output_text","text":"Yes: multiplication by $a \\ne 0$ is injective, hence bijective."}]}}
+{"timestamp":"2026-09-01T10:00:08.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"t1","last_agent_message":"DUP"}}
+{"timestamp":"2026-09-01T10:01:00.000Z","type":"event_msg","payload":{"type":"user_message","message":"Now for division rings.","images":[],"local_images":[]}}
+{"timestamp":"2026-09-01T10:01:01.000Z","type":"event_msg","payload":{"type":"turn_aborted","turn_id":"t2","reason":"interrupted","duration_ms":5}}
+{"timestamp":"2026-09-01T10:01:01.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<turn_aborted>\nThe user interrupted.\n</turn_aborted>"}]}}
+{"timestamp":"2026-09-01T10:01:02.000Z","type":"compacted","payload":{"message":"summary text","replacement_history":[]}}
+{"timestamp":"2026-09-01T10:01:02.000Z","type":"event_msg","payload":{"type":"context_compacted"}}

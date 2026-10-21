@@ -23,6 +23,12 @@ release remains accessible in GitHub history. Returning later begins with the
 new installation's own checkpoints; private native history is never uploaded
 or transferred automatically.
 
+MathDesk (`harness/`) is self-contained. To add it to an existing version 2
+hub, copy the kit's `template/harness/` folder into the hub as `harness/`,
+then run `python3 harness/mathdesk.py install`. It reads the catalogs and
+never writes them. `python3 harness/mathdesk.py uninstall` removes exactly
+its own hooks.
+
 For a future update to a version 2 hub, back up your current tool and configuration
 first. Update the complete `tools/` package together, review schema/release notes,
 and preserve your catalogs, knowledge, workspace identity, rules and archives.

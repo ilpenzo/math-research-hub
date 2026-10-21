@@ -29,6 +29,10 @@ python3 tools/hub.py render                      # rebuild readable indexes
 python3 tools/hub.py doctor                      # check the installation
 ```
 
+To read sessions with the mathematics typeset, run
+`python3 harness/mathdesk.py install` once, then
+`python3 harness/mathdesk.py open` (see [harness/README.md](harness/README.md)).
+
 hub.json is the complete list of projects and read-only archives. Add a
 project with `hub.py add-project` and a folder of earlier work with
 `hub.py add-archive`.
