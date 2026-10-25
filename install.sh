@@ -310,7 +310,7 @@ if command -v git >/dev/null 2>&1; then
   if [ -n "${HUB_GIT:-}" ]; then [ "$HUB_GIT" = "yes" ] && USE_GIT=1
   elif ask_yes "Keep a local version history with git?" y; then USE_GIT=1; fi
 else
-  note "git is not installed, so the hub will rely on its own backups in .hub/history/."
+  note "git is not installed, so the hub will rely on its own backups in .hub/transactions/."
 fi
 
 # ------------------------------------------------------------------ confirm

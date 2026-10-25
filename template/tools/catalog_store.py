@@ -227,6 +227,10 @@ def load_catalog(hub: Path, cfg=None, layout=None, *, overrides=None, already_lo
         catalog = Catalog(cfg=cfg, layout=detected)
         if config_bytes is not None:
             catalog.file_hashes['hub.json'] = tx.digest(config_bytes)
+        import storage_policy
+        storage_policy.load(hub, overrides)
+        policy_raw = overrides.get(storage_policy.CONFIG) if storage_policy.CONFIG in overrides else tx.read_bytes(hub / storage_policy.CONFIG)
+        catalog.file_hashes[storage_policy.CONFIG] = tx.digest(policy_raw)
         errors = []
         for kind in KINDS:
             files = [(legacy_path(hub, kind), None)] if detected == 'legacy' else [
@@ -265,6 +269,9 @@ def load_catalog(hub: Path, cfg=None, layout=None, *, overrides=None, already_lo
             envelope = knowledge.empty_envelope() if raw is None else json.loads(raw)
             catalog.knowledge[owner] = envelope
         errors = knowledge.validate(catalog, hub, overrides)
+        from recall import checkpoint_store
+        if not errors:
+            errors.extend(checkpoint_store.validate_catalog(catalog, hub, overrides))
         if errors:
             raise CatalogError('; '.join(errors))
         for owner, envelope in catalog.knowledge.items():

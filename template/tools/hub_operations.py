@@ -37,8 +37,18 @@ def prospective(hub, overrides, scopes, transfers=None):
     for key, target in transfers.items():
         if key not in old or key not in new or after.project_of(new[key]) != target:
             errors.append(f'Invalid or unperformed declared transfer: {key}={target}')
-    from recall import knowledge
+    from recall import knowledge, checkpoint_store
     errors.extend(knowledge.validate_transition(before, after, scopes))
+    # Validate newly referenced bodies completely; ordinary readers only hash the
+    # small compressed object. Check every changed descriptor, not just new paths.
+    old_operational = before.knowledge_by_id()
+    for project, envelope in after.knowledge.items():
+        for entry in envelope.get('checkpoints', []):
+            if 'body' in entry and old_operational.get(entry['id']) != entry:
+                try:
+                    checkpoint_store.hydrate(hub, project, entry, overrides)
+                except (OSError, ValueError, KeyError, TypeError, RecursionError) as exc:
+                    errors.append(f'{entry["id"]}: {exc}')
     old_aids = {entry['id'] for envelope in before.knowledge.values() for entry in envelope['aids']}
     for project, envelope in after.knowledge.items():
         added = {entry['id'] for entry in envelope['aids']} - old_aids
@@ -52,11 +62,16 @@ def prospective(hub, overrides, scopes, transfers=None):
     knowledge_paths = {cs.knowledge_path(Path(hub).resolve(), project).relative_to(Path(hub).resolve()).as_posix()
                        for project in [*after.cfg['projects'], 'hub']}
     reservation_paths = {f'projects/{project}/catalog/reservations.json' for project in after.cfg['projects']}
+    body_paths = {name for name in overrides if checkpoint_store.is_body_path(name)}
+    referenced_bodies = {entry['body']['path'] for envelope in after.knowledge.values()
+                         for entry in envelope.get('checkpoints', []) if 'body' in entry}
+    if body_paths - referenced_bodies:
+        errors.append('New checkpoint bodies must be referenced by canonical checkpoint metadata')
     # Supplemental publication cannot mutate theorem state. Its routine path
     # does not rehash the mathematical evidence corpus. A joint batch, changed
     # proof file or configuration always takes the existing full validation.
     recall_config = 'catalog/recall-config.json'
-    supplemental_only = (set(overrides) <= knowledge_paths | reservation_paths | {recall_config}
+    supplemental_only = (set(overrides) <= knowledge_paths | reservation_paths | body_paths | {recall_config}
                          and before.cfg == after.cfg and old == new)
     if supplemental_only:
         errors.extend(knowledge.validate(after, hub, overrides))

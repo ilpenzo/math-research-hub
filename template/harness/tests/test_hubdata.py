@@ -138,6 +138,54 @@ class FixtureHubTest(unittest.TestCase):
             time.sleep(0.05)
         self.assertTrue(any(d['path'] == 'projects/demo/NEW.md' for d in self.hub.documents()))
 
+    def test_fts_query_holds_read_only_lease(self):
+        import fcntl
+        from unittest.mock import patch
+        directory = os.path.join(self.root, '.hub/recall')
+        generation = 'a' * 32
+        path = os.path.join(directory, 'generations', generation, 'index.sqlite')
+        _write(path, '')
+        _write(os.path.join(directory, 'CURRENT.json'), self.json.dumps({'generation': generation}))
+        lock = os.path.join(directory, 'readers.lock')
+        _write(lock, '')
+        before = os.stat(lock).st_mtime_ns
+
+        def query(selected, *args):
+            self.assertEqual(selected, path)
+            with open(lock, 'rb') as contender:
+                with self.assertRaises(BlockingIOError):
+                    fcntl.flock(contender.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return ['pinned']
+
+        with patch.object(self.hub, '_fts_hits_at', side_effect=query):
+            self.assertEqual(self.hub._fts_hits({}, 'x', None, 1, ['x']), ['pinned'])
+        with open(lock, 'rb') as contender:
+            fcntl.flock(contender.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            with self.hub._fts_lease() as selected:
+                self.assertIsNone(selected)
+            fcntl.flock(contender.fileno(), fcntl.LOCK_UN)
+        self.assertEqual(os.stat(lock).st_mtime_ns, before)
+
+    def test_fts_legacy_lease_creates_no_files(self):
+        import fcntl
+        directory = os.path.join(self.root, '.hub/recall')
+        generation = 'b' * 32
+        path = os.path.join(directory, 'generations', generation, 'index.sqlite')
+        _write(path, '')
+        _write(os.path.join(directory, 'CURRENT.json'), self.json.dumps({'generation': generation}))
+        with self.hub._fts_lease() as selected:
+            self.assertIsNone(selected)
+        reader_lock = os.path.join(directory, 'readers.lock')
+        self.assertFalse(os.path.exists(reader_lock))
+        refresh_lock = os.path.join(directory, 'refresh.lock')
+        _write(refresh_lock, '')
+        with self.hub._fts_lease() as selected:
+            self.assertEqual(selected, path)
+            with open(refresh_lock, 'rb') as contender:
+                with self.assertRaises(BlockingIOError):
+                    fcntl.flock(contender.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        self.assertFalse(os.path.exists(reader_lock))
+
     def test_aid_prefix_reader(self):
         text = self.json.dumps({'schema_version': 1, 'aids': [{'id': 'K001'}], 'checkpoints': [1] * 10})
         self.assertEqual(hubdata._parse_aids(text), [{'id': 'K001'}])

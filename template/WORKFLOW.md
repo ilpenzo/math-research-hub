@@ -155,7 +155,7 @@ See [CONNECTIONS.md](CONNECTIONS.md) for recall, Gap briefs, research aids,
 frontier dispositions, local semantic setup and same-service return later.
 Record claim truth, proof review, novelty and research-memory inspection separately.
 
-For larger changes, `snapshot --project NAME` captures the current bases;
+For larger changes, `snapshot --project NAME --hashes-only` captures the current bases;
 `apply BATCH.json --scope NAME --owner OWNER` publishes a validated batch.
 The batch has `changes` (relative file names to complete text) and `expected`
 (the previous SHA-256 for every changed file, null only for new files).
@@ -163,3 +163,19 @@ Root configuration needs `--scope hub`. Never edit canonical JSON directly.
 An interrupted transaction blocks further writes; inspect its journal and use
 `recover TRANSACTION --direction finish` or `--direction rollback`. Do not
 remove lock files or use recovery to reverse an already committed change.
+
+
+## Storage and routine snapshots
+
+Use `python3 tools/hub.py snapshot --project NAME --hashes-only` to capture a
+small publication base. `--full` explicitly exports complete catalog content,
+including expanded checkpoint bodies; the legacy no-flag export remains supported.
+
+Transactions retain compressed payloads by content hash. Frontier histories keep
+small metadata in knowledge catalogs and immutable canonical bodies in the owning
+`catalog/frontier/`; include these bodies in backups. Search refreshes collect
+unused generations and enforce byte budgets while protecting active readers.
+Run `python3 tools/hub.py storage status` to inspect growth and free space.
+[STORAGE.md](STORAGE.md) covers configuration, lossless upgrades, compatible
+compression decoders and recovery. Research evidence and historical checkpoints
+are never automatically pruned.

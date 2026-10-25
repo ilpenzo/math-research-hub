@@ -115,3 +115,18 @@ See [PRIVACY.md](PRIVACY.md).
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+
+## Storage controls
+
+Session updates use shared compressed transaction payloads and keep frontier
+history in immutable objects outside frequently edited catalogs. Search indexes
+and parsing/embedding caches have configurable byte budgets, with running queries
+protected from collection. Routine snapshots can contain only publication hashes.
+
+Use `python3 tools/hub.py storage status` from an installed hub. Fresh installs
+include these controls. Existing version 2 hubs can migrate their journal and
+checkpoint storage losslessly; see [UPGRADE.md](UPGRADE.md) and
+[the storage guide](STORAGE.md). All research and historical checkpoints remain
+retained. Python 3.11+ works with standard-library XZ; zstd is used when its decoder
+is available, including Python 3.14's standard library.

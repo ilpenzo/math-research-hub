@@ -6,12 +6,13 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
+        python: ['3.11', '3.14']
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: ${{ matrix.python }}
       - run: python3 -m unittest discover -s template/tools -p 'test_*.py'
       - name: Install expect (for the interactive test)
         if: runner.os == 'Linux'

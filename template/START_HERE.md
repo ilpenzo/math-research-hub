@@ -36,3 +36,6 @@ To read sessions with the mathematics typeset, run
 hub.json is the complete list of projects and read-only archives. Add a
 project with `hub.py add-project` and a folder of earlier work with
 `hub.py add-archive`.
+
+Storage: use `storage status` for disk accounting and `snapshot --hashes-only`
+for routine publication bases; see [STORAGE.md](STORAGE.md).

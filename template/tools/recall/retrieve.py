@@ -179,6 +179,11 @@ def _live_candidates(catalog, query_terms, project, broad, allowed, include_know
 
 
 def search(hub, query, project=None, limit=8, semantic=True, broad=False, include_knowledge=True):
+    with index.cache_storage.reader(hub) as generation:
+        return _search(hub, query, project, limit, semantic, broad, include_knowledge, generation)
+
+
+def _search(hub, query, project, limit, semantic, broad, include_knowledge, generation):
     if not isinstance(query, str) or not query.strip():
         raise ValueError('Recall query must be a nonempty string')
     if not isinstance(limit, int) or limit < 1 or limit > 100:
@@ -190,8 +195,7 @@ def search(hub, query, project=None, limit=8, semantic=True, broad=False, includ
     if project:
         allowed, _, unresolved = cs.closure(catalog, project)
     fts, terms, filters = _query(query)
-    state = index.status(hub)
-    generation = index.current_generation(hub)
+    state = index.status(hub, generation, pinned=True, storage=False)
     warnings = list(state.get('warnings', []))
     stale = state.get('catalog_hashes') != catalog.file_hashes
     scope, params = _scope_sql(project, broad, allowed, include_knowledge, filters)

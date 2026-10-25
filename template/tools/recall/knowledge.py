@@ -96,7 +96,7 @@ def validate(catalog, hub, overrides=None):
         if not isinstance(envelope, dict):
             errors.append(f'{owner}: knowledge envelope must be an object')
             continue
-        if type(envelope.get('schema_version')) is not int or envelope['schema_version'] != 1:
+        if type(envelope.get('schema_version')) is not int or envelope['schema_version'] not in {1, 2}:
             errors.append(f'{owner}: unsupported knowledge schema_version')
         for extra in set(envelope) - {'schema_version', *SECTIONS}:
             errors.append(f'{owner}: unknown knowledge section {extra}')
@@ -124,6 +124,8 @@ def validate(catalog, hub, overrides=None):
                 if not _json_value(entry):
                     errors.append(f'{label}: entry must contain finite JSON values only')
                 if section != 'aids':
+                    if section == 'checkpoints' and 'body' in entry and envelope.get('schema_version') != 2:
+                        errors.append(f'{label}: external checkpoint bodies require knowledge schema_version 2')
                     if _text(key) and not key.startswith(f'{owner}:'):
                         errors.append(f'{label}: operational ID must start with {owner}:')
                     if section == 'sessions':
@@ -249,7 +251,13 @@ def _replacement(spec, previous, expected_revision):
 
 def _publish(hub, catalog, project, section, entry, owner, extra=None):
     import hub_operations as ops
+    if section == 'checkpoints':
+        from . import checkpoint_store
+        entry, body_files = checkpoint_store.prepare(hub, project, entry)
+        extra = dict(extra or {}, **body_files)
     envelope = copy.deepcopy(catalog.knowledge[project])
+    if section == 'checkpoints' and 'body' in entry:
+        envelope['schema_version'] = 2
     rows = envelope[section]
     rows[:] = [entry if row['id'] == entry['id'] else row for row in rows]
     if not any(row['id'] == entry['id'] for row in rows):

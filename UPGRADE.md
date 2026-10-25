@@ -36,3 +36,29 @@ For a future update to a version 2 hub, back up your current tool and configurat
 first. Update the complete `tools/` package together, review schema/release notes,
 and preserve your catalogs, knowledge, workspace identity, rules and archives.
 Copying the public skeleton over a working hub is not an upgrade procedure.
+
+
+## Storage update for version 2 hubs
+
+Back up the current tools/configuration and stop running hub commands before
+switching the complete tools package. Preserve your data and customized rules.
+The installer is for new hubs; do not copy the entire skeleton over an existing
+hub. Install new helper modules before replacing their existing callers, or
+replace the tools directory while hub commands are stopped. Restart long-running
+processes that import the tools. If MathDesk is installed, also update
+`harness/core/hubdata.py` and run `python3 harness/mathdesk.py restart` so its
+search queries protect active index readers during collection.
+
+Then follow the inspect/apply sequence in [STORAGE.md](STORAGE.md): compact and
+verify the journal, migrate checkpoint bodies, collect disposable caches, and
+run check/render. Journal schema 2 and knowledge-envelope schema 2 are explicit
+format changes; new readers support old data, while old knowledge readers reject
+external-body catalogs. Full snapshots expand bodies when needed. Backups must
+include `catalog/frontier/` and, for complete transaction history,
+`.hub/transactions/`. Changing Python runtimes may require the optional
+`zstandard` decoder for previously written zstd data.
+
+Adopt `snapshot --hashes-only` in your publication workflow, and retain full
+exports only when required. Review the new storage guidance when reconciling
+AGENTS.md and WORKFLOW.md. None of these commands prunes retained research or
+committed transaction history.

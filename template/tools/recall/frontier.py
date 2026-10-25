@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import catalog_store as cs
-from . import graph, knowledge, packets, retrieve
+from . import graph, knowledge, packets, retrieve, checkpoint_store
 
 MAX_WATCHES = 32
 MAX_MATCHES = 3
@@ -82,6 +82,8 @@ def _compute(hub, project, since=None):
     catalog = cs.load_catalog(hub)
     objects, allowed, _ = graph.scope(catalog, project)
     prior = _checkpoint(catalog, project, since)
+    if prior is not None:
+        prior = checkpoint_store.hydrate(hub, project, prior)
     dispositions = {entry['item_id']: entry for entry in catalog.knowledge[project]['dispositions']
                     if entry.get('purpose') == 'frontier-disposition' and entry.get('item_id')}
     watches = _watches(objects, project)

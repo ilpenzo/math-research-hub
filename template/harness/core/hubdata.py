@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import codecs
 from collections import OrderedDict, defaultdict
+from contextlib import contextmanager
 import copy
 import fcntl
 import json
@@ -1144,7 +1145,34 @@ class Hub:
         return path if os.path.isfile(path) else None
 
     def _fts_hits(self, conf, query, project, limit, terms):
-        path = self._fts_path()
+        with self._fts_lease() as path:
+            return self._fts_hits_at(path, conf, query, project, limit, terms)
+
+    @contextmanager
+    def _fts_lease(self):
+        directory = os.path.join(self._internal, 'recall')
+        lock = os.path.join(directory, 'readers.lock')
+        if not os.path.isfile(lock):
+            # Legacy indexes have only the refresh lock. Both refresh and GC
+            # own it, so it protects readers during a storage upgrade too.
+            lock = os.path.join(directory, 'refresh.lock')
+        try:
+            stream = open(lock, 'rb')
+        except OSError:
+            yield None
+            return
+        with stream:
+            try:
+                fcntl.flock(stream.fileno(), fcntl.LOCK_SH | fcntl.LOCK_NB)
+            except BlockingIOError:
+                yield None
+                return
+            try:
+                yield self._fts_path()
+            finally:
+                fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+
+    def _fts_hits_at(self, path, conf, query, project, limit, terms):
         if not path:
             return []
         plain, alias = self._normalizers()

@@ -338,6 +338,15 @@ def check(project=None):
     if project is not None:
         ids, foreign, unresolved = cs.closure(_CAT, project)
     errors = cv.validate(_CAT, HUB, ids)
+    from recall import checkpoint_store
+    errors.extend(checkpoint_store.validate_catalog(_CAT, HUB, full=True,
+                                                   owners={project} if project else None))
+    import storage_policy
+    threshold = storage_policy.load(HUB)['catalog_warning_bytes']
+    for relative in _CAT.file_hashes:
+        path = HUB / relative
+        if path.is_file() and path.suffix == '.json' and path.stat().st_size > threshold:
+            print(f'WARNING: large live catalog {relative}: {path.stat().st_size} bytes; run storage status.')
     for path in sorted((HUB / '.codex').rglob('*.toml')):
         try:
             with path.open('rb') as stream:
@@ -554,6 +563,9 @@ def show(key, structured=False):
             return 0
     if hasattr(_CAT, 'knowledge_by_id') and key in _CAT.knowledge_by_id():
         item = _CAT.knowledge_by_id()[key]
+        if item.get('purpose') == 'frontier-input-manifest' and 'body' in item:
+            from recall import checkpoint_store
+            item = checkpoint_store.hydrate(HUB, item['project'], item)
         refs = [r['id'] for r in item.get('references',[]) if isinstance(r,dict)]
         result = dict(entry=item,current_context=_current_context(_CAT,refs),
                       notice='Research aid or operational context; no theorem authority or automatic applicability certification.')
@@ -574,13 +586,20 @@ def show(key, structured=False):
 
 
 @command_snapshot
-def export_snapshot(project):
+def export_snapshot(project, hashes_only=False):
     if project not in CFG['projects'] and project != 'hub':
         raise ValueError('Unknown project')
+    if hashes_only:
+        print(json.dumps(dict(project=project, expected=snapshot_hashes()), ensure_ascii=False, indent=2))
+        return
+    from recall import checkpoint_store
+    envelope = getattr(_CAT, 'knowledge', {}).get(project, {})
+    envelope = dict(envelope, checkpoints=[checkpoint_store.hydrate(HUB, project, row)
+                                          for row in envelope.get('checkpoints', [])])
     print(json.dumps(dict(project=project, expected=snapshot_hashes(),
         records=[r for r in records() if project_of(r) == project],
         sources=[s for s in sources() if project_of(s) == project],
-        knowledge=getattr(_CAT, 'knowledge', {}).get(project, {})), ensure_ascii=False, indent=2))
+        knowledge=envelope), ensure_ascii=False, indent=2))
 
 
 @command_snapshot
@@ -692,6 +711,10 @@ def main():
     for command in ['snapshot', 'view-status', 'context']:
         cmd = sub.add_parser(command)
         cmd.add_argument('--project', required=command != 'context')
+        if command == 'snapshot':
+            mode = cmd.add_mutually_exclusive_group()
+            mode.add_argument('--hashes-only', action='store_true', help='Small concurrency-base snapshot; recommended for ordinary work')
+            mode.add_argument('--full', action='store_true', help='Explicit self-contained catalog export (legacy default)')
         if command == 'context':
             cmd.add_argument('--role', choices=['conductor', 'helper'], default='conductor')
             cmd.add_argument('--resume', action='store_true')
@@ -720,9 +743,13 @@ def main():
     import kit
     kit.configure(sub)
     recall_cli.configure(sub)
+    import storage
+    storage.configure(sub)
     args = parser.parse_args()
     if args.hub_dir:
         HUB = args.hub_dir.resolve()
+    if args.command == 'storage':
+        return storage.dispatch(HUB, args)
     if args.command in kit.COMMANDS:
         return kit.dispatch(HUB, args)
     if args.command in recall_cli.COMMANDS or (args.command == 'context' and args.resume):
@@ -760,7 +787,7 @@ def main():
     if args.command == 'sweep':
         return sweep() or 0
     if args.command == 'snapshot':
-        return export_snapshot(args.project) or 0
+        return export_snapshot(args.project, args.hashes_only) or 0
     if args.command == 'view-status':
         return view_status(args.project) or 0
     if args.command == 'context':

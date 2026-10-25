@@ -14,7 +14,7 @@ import struct
 import unicodedata
 import uuid
 
-from . import corpus, providers
+from . import corpus, providers, cache_storage
 
 SCHEMA_VERSION = 1
 NORMALIZER_VERSION = 'math-v2'
@@ -91,7 +91,12 @@ def state_dir(hub):
     return Path(hub) / '.hub/recall'
 
 
-def _write_json(path, value):
+def _write_json(path, value, budget=None):
+    if budget is not None:
+        raw = json.dumps(value, ensure_ascii=False, sort_keys=True).encode()
+        if path.is_relative_to(budget.root / "cache"):
+            return budget.write_cache(path, raw)
+        return budget.write_generation(path, raw)
     path.parent.mkdir(parents=True, exist_ok=True)
     temp = path.with_name(path.name + '.' + uuid.uuid4().hex + '.tmp')
     with temp.open('w') as stream:
@@ -121,12 +126,19 @@ def current_generation(hub):
     return path
 
 
-def status(hub):
-    generation = current_generation(hub)
+def status(hub, generation=None, *, pinned=False, storage=True):
+    if not pinned:
+        with cache_storage.reader(hub) as selected:
+            return status(hub, selected, pinned=True, storage=storage)
     if generation is None:
         return dict(ready=False, coverage={'indexed_chunks': 0}, semantic={'state': 'unconfigured'},
-                    warnings=['Recall has not been refreshed.'])
-    return json.loads((generation / 'status.json').read_text())
+                    warnings=['Recall has not been refreshed.' if not (state_dir(hub) / 'CURRENT.json').exists()
+                              else 'Recall has no available leased generation; live canonical retrieval remains available.'])
+    result = json.loads((generation / 'status.json').read_text())
+    if storage:
+        result['storage_usage'] = dict(generation_bytes=cache_storage.size(state_dir(hub) / 'generations'),
+                                      cache_bytes=cache_storage.size(state_dir(hub) / 'cache'))
+    return result
 
 
 @contextmanager
@@ -146,6 +158,7 @@ def _refresh_lock(hub):
 
 def _connection(path):
     connection = sqlite3.connect(path)
+    connection.execute('PRAGMA journal_mode=OFF')
     connection.executescript('''
       CREATE TABLE chunks (id TEXT PRIMARY KEY, owner TEXT, tier TEXT, source_id TEXT,
         root TEXT, path TEXT, locator TEXT, title TEXT, text TEXT, sha256 TEXT,
@@ -158,7 +171,7 @@ def _connection(path):
     return connection
 
 
-def _parse_cached(hub, manifest, descriptor):
+def _parse_cached(hub, manifest, descriptor, budget=None):
     key = corpus.digest([corpus.PARSER_VERSION, descriptor])
     path = state_dir(hub) / 'cache/parsed' / (key + '.json')
     if path.exists():
@@ -167,13 +180,15 @@ def _parse_cached(hub, manifest, descriptor):
         actual = corpus.resolve(hub, manifest['configuration'], descriptor['root'], descriptor['path'])
         if corpus.digest(actual.read_bytes()) != descriptor['sha256']:
             raise ValueError(f'File changed after manifest freeze: {descriptor["path"]}')
+        if budget is not None:
+            budget.touch(path)
         return chunks, True
     chunks = corpus.parse_file(hub, manifest, descriptor)
-    _write_json(path, chunks)
+    _write_json(path, chunks, budget)
     return chunks, False
 
 
-def refresh(hub, project=None, manifest=None, semantic=False):
+def _refresh(hub, project=None, manifest=None, semantic=False, budget=None):
     """Build a complete eligible generation; failure leaves the previous pointer.
 
     Project is a reporting scope only: shared generation refresh never drops other
@@ -181,7 +196,7 @@ def refresh(hub, project=None, manifest=None, semantic=False):
     from the last successful generation and discovers current registered files.
     """
     hub = Path(hub).resolve()
-    with _refresh_lock(hub):
+    with budget.build_scope():
         previous = current_generation(hub)
         if manifest is None:
             selection = None
@@ -197,12 +212,12 @@ def refresh(hub, project=None, manifest=None, semantic=False):
         generation_id = uuid.uuid4().hex
         directory = state_dir(hub) / 'generations' / generation_id
         directory.mkdir(parents=True)
-        connection = _connection(directory / 'index.sqlite')
+        budget.directory = directory
         gaps = []
         chunks, parsed_hits, parsed_files = list(manifest['objects']), 0, 0
         for descriptor in manifest['files']:
             try:
-                parsed, cached = _parse_cached(hub, manifest, descriptor)
+                parsed, cached = _parse_cached(hub, manifest, descriptor, budget)
                 chunks.extend(parsed)
                 parsed_hits += int(cached)
                 parsed_files += 1
@@ -230,6 +245,7 @@ def refresh(hub, project=None, manifest=None, semantic=False):
                 for group in grouped.values():
                     if group['path'].exists():
                         vector = json.loads(group['path'].read_text())
+                        budget.touch(group['path'])
                         vectors.update((key, vector) for key in group['ids'])
                         vector_hits += len(group['ids'])
                     else:
@@ -242,7 +258,7 @@ def refresh(hub, project=None, manifest=None, semantic=False):
                     output = provider.embed([group['text'] for group in batch])
                     for group, vector in zip(batch, output):
                         vectors.update((key, vector) for key in group['ids'])
-                        _write_json(group['path'], vector)
+                        _write_json(group['path'], vector, budget)
                 dimensions = {len(v) for v in vectors.values()}
                 if len(dimensions) > 1:
                     raise providers.ProviderUnavailable('Embedding dimensions changed; cached vectors not mixed')
@@ -257,7 +273,11 @@ def refresh(hub, project=None, manifest=None, semantic=False):
                 # Cached successes survive; this generation publishes lexical fallback only.
                 vectors = {}
                 semantic_state.update(state='unavailable', reason=str(exc), cache_hits=vector_hits)
+        if cache_storage.size(state_dir(hub) / 'generations') + 65536 > budget.policy['generation_budget_bytes']:
+            raise ValueError('Recall generation budget exhausted; current index retained')
+        connection = _connection(directory / 'index.sqlite')
         try:
+            budget.cap_sqlite(connection, directory, len(json.dumps(manifest, sort_keys=True).encode()) + 131072)
             for chunk in chunks:
                 vector = vectors.get(chunk['id'])
                 blob = struct.pack('<' + 'f' * len(vector), *vector) if vector else None
@@ -291,7 +311,29 @@ def refresh(hub, project=None, manifest=None, semantic=False):
                      'unique_texts': len({corpus.digest([c['title'], c['text']]) for c in chunks})},
             warnings=['Some eligible files have explicit parser/acquisition gaps.']
                      if gaps or manifest.get('gaps') else [])
-        _write_json(directory / 'manifest.json', manifest)
-        _write_json(directory / 'status.json', result)
-        _write_json(state_dir(hub) / 'CURRENT.json', {'generation': generation_id})
+        _write_json(directory / 'manifest.json', manifest, budget)
+        _write_json(directory / 'status.json', result, budget)
+        with (directory / 'index.sqlite').open('rb') as database:
+            os.fsync(database.fileno())
+        _write_json(state_dir(hub) / 'CURRENT.json', {'generation': generation_id, 'previous_generation': previous.name if previous else None})
         return result
+
+
+def refresh(hub, project=None, manifest=None, semantic=False):
+    """Refresh within byte budgets; failed builds leave the selected index intact."""
+    with _refresh_lock(Path(hub)):
+        budget = cache_storage.Budget(hub)
+        try:
+            result = _refresh(hub, project, manifest, semantic, budget)
+        except sqlite3.OperationalError as exc:
+            raise ValueError('Recall build failed (possibly generation budget exhausted); current index retained: ' + str(exc)) from exc
+        result['collection'] = budget.collection
+        return result
+
+
+def collect(hub):
+    """Explicit maintenance, also performed on every refresh; canonical data excluded."""
+    with _refresh_lock(Path(hub)):
+        budget = cache_storage.Budget(hub)
+        return dict(**budget.collection, generation_bytes=cache_storage.size(budget.root / 'generations'),
+                    cache_bytes=budget.cache_bytes, limits=budget.policy)

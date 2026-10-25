@@ -157,3 +157,12 @@ with `hub.py show ID --json` and merge instead of forcing it. The returned
 `entry_hash` is the expected hash for `put --expect ID=HASH`. `remember` updates
 require `expected_revision`. All canonical writes share the recoverable kernel;
 retry a busy gate, reconcile stale bases, and never delete lock files.
+
+
+## Storage
+
+Use `snapshot --project NAME --hashes-only` for routine publication bases.
+Full exports are explicit with `--full`. Keep canonical `catalog/frontier/`
+bodies in backups; they are not disposable recall caches. Do not prune research
+or transaction history to resolve disk growth. Inspect `storage status` and
+follow [STORAGE.md](STORAGE.md) for lossless maintenance and cache budgets.
