@@ -19,6 +19,10 @@ directed by AGENTS.md; do not fabricate a native thread ID.
   computation that must write files goes to a general-purpose agent with one
   named folder to write in.
 - Read PDFs with page ranges or `pdftotext`, never all at once.
+- For an authorized proof/construction search, use PROSPECTOR.md and its
+  discovery cadence. Tool-free CLI slots receive self-contained statements;
+  named-input-first retrieval applies to tool-enabled helpers. PROOF_SWARM
+  remains the separate certification workflow.
 - Use the Workflow tool, scheduled agents or other background launches only
   when the owner asks for them.
 - Auto memory is for the owner's preferences and workflow feedback. Research

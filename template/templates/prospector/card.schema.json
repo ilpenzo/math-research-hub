@@ -1,0 +1,45 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "cards", "verdicts"],
+  "properties": {
+    "summary": {"type": "string"},
+    "cards": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title", "kind", "statement", "role", "sketch", "weakest_step", "kill_test", "evidence", "differs_from", "confidence", "cost", "gap_after"],
+        "properties": {
+          "title": {"type": "string"},
+          "kind": {"type": "string", "enum": ["lemma", "construction", "reduction", "counterexample", "strategy", "argument"]},
+          "statement": {"type": "string"},
+          "role": {"type": "string"},
+          "sketch": {"type": "string"},
+          "weakest_step": {"type": "string"},
+          "kill_test": {"type": "string"},
+          "evidence": {"type": "string"},
+          "differs_from": {"type": "string"},
+          "confidence": {"type": "number"},
+          "cost": {"type": "string", "enum": ["small", "medium", "large"]},
+          "gap_after": {"type": "string"}
+        }
+      }
+    },
+    "verdicts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["card", "verdict", "reason", "evidence", "salvage"],
+        "properties": {
+          "card": {"type": "string"},
+          "verdict": {"type": "string", "enum": ["killed", "survives", "unclear"]},
+          "reason": {"type": "string"},
+          "evidence": {"type": "string"},
+          "salvage": {"type": "string"}
+        }
+      }
+    }
+  }
+}

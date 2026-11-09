@@ -28,6 +28,8 @@ HUB_ARCHIVES="$WORK/old-notes" HUB_ASSISTANTS=claude HUB_INSTALL_TOOLS=no HUB_GI
   grep -q "Import earlier work" projects/widgets-and-ampleness/indexes/CATALOG.md
   grep -q "Import earlier work" PROMPTS.md                  # the section the empty catalog points to
   python3 -c 'import json; json.load(open(".claude/settings.json"))'
+  python3 tools/prospector.py --help > /dev/null
+  python3 -c 'import json; s=json.load(open("templates/prospector/run.json")); assert all(b["effort_by_stage"] == {"prospect":"high", "assay":"high", "dig":"xhigh"} for b in s["backends"].values())'
   python3 tools/test_hub.py > "$WORK/unit.log" 2>&1 || { cat "$WORK/unit.log"; exit 1; }
 ) || fail "unattended install produced a broken hub"
 [ "$(cat "$HUB_CODEX_CONFIG_ROOT/config.toml")" = 'model = "example"' ] || fail "Claude-only install changed the Codex settings"

@@ -2,6 +2,17 @@
 
 ## The loop
 
+For authorized discovery use [Prospector](PROSPECTOR.md): one explicit move,
+rough derivation, a decisive check when useful, then parent synthesis and the
+next question. New runs use explicit stage effort settings. Supply complete
+tool-free briefs; tool-enabled helpers search only for a blocking fact.
+Keep a rewritten one-page Current mathematics section near the top of the
+existing NOTE. Read selected evidence below it, preserving all history. A
+short parent computation on an actual control can sharpen the next assignment.
+Retain raw evidence and brief deltas; batch routine administration and defer
+polished reports to selected survivors. The 5–10 minute first-return target is
+soft, never a timeout or permission to shorten certification.
+
 Retrieve, formulate the missing implication, test controls, investigate,
 review, then record what changed. Search prior attempts before starting a long
 run. When the session ends, a new conversation should be able to tell what

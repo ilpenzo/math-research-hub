@@ -47,7 +47,7 @@ def start_server(config, settings):
 
 def main(argv):
     if os.environ.get('MATHDESK_SKIP'):
-        return  # a review launched by MathDesk itself; its reply is published directly
+        return  # internal Prospector workers and reviews published directly by MathDesk
     service = argv[argv.index('--service') + 1] if '--service' in argv else None
     try:
         payload = json.loads(sys.stdin.read() or '{}')

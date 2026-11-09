@@ -1,0 +1,40 @@
+{
+  "kind": "prospector-run",
+  "name": "",
+  "project": "",
+  "gap": null,
+  "target": "",
+  "owner": "",
+  "created_utc": "",
+  "authorization": "Quote the user's request that authorizes this run and its budget",
+  "budget": {
+    "total_calls": 24,
+    "claude_calls": 6,
+    "claude_per_round": 2,
+    "concurrency": 3,
+    "timeout_seconds": null
+  },
+  "backends": {
+    "codex": {
+      "model": null,
+      "effort": "high",
+      "effort_by_stage": {"prospect": "high", "assay": "high", "dig": "xhigh"},
+      "sandbox": "workspace-write"
+    },
+    "claude": {
+      "model": "opus",
+      "effort": "high",
+      "effort_by_stage": {"prospect": "high", "assay": "high", "dig": "xhigh"}
+    }
+  },
+  "default_slots": {"prospect": 2, "assay": 1, "dig": 1},
+  "max_cards_per_slot": 1,
+  "prompt_word_warning": 2500,
+  "max_inline_chars": 60000,
+  "context_files": [],
+  "hidden": [],
+  "feed_forward": {"survivors": 2, "kills": 4, "open": 3},
+  "lenses_extra": null,
+  "budget_changes": [],
+  "outcome": null
+}

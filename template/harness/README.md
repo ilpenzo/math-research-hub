@@ -25,6 +25,14 @@ MathDesk tab is open, a tab opens in the background. A tab that is already
 open updates in place. A session you are reading never jumps: other sessions
 get an unread badge instead.
 
+Internal Prospector explorers, assays, digs and connectivity checks do not
+appear as conversations or trigger notifications and automatic PDFs. The
+filter also hides previously captured workers while retaining their spool
+files and native transcripts. It uses worker directories and exact opening
+prompt signatures; ordinary conversations discussing Prospector remain visible.
+After updating this filter, run `python3 harness/mathdesk.py restart` and
+reload an existing browser tab to refresh its session list.
+
 | Where | What it does |
 |---|---|
 | Left rail | Live and earlier sessions from Claude Code (C), Codex (X) and documents pushed to the desk (D) |
@@ -141,7 +149,7 @@ in `static/vendor/VERSIONS.txt`. `tests/` holds the tests. The design is in
 [DESIGN.md](DESIGN.md).
 
 Run the tests with `python3 harness/tests/test_core.py`, the same for
-`test_transcripts.py`, `test_hubdata.py` and `test_export.py`, and
+`test_transcripts.py`, `test_session_filter.py`, `test_hubdata.py` and `test_export.py`, and
 `node harness/tests/mathsplit.test.js`. Chrome, LaTeX and macOS tests skip
 when their tool is missing.
 

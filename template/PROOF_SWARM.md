@@ -30,6 +30,16 @@ responsibility, not an extra program. It:
 
 ## Developing ideas
 
+Use [Prospector's discovery cadence](PROSPECTOR.md#discovery-cadence): one move,
+minimal self-contained inputs, a rough early return, adaptive waves and active
+parent synthesis. Maintain the NOTE's rewritten Current mathematics section.
+Try a short parent computation on an actual control when it sharpens the next
+question. Search only for a specific missing fact in a helper's named inputs.
+New Prospector runs explicitly use high effort for prospect/assay and xhigh for
+selected digs. This trial does not change parent or frozen-review settings,
+impose a timeout or increase allowances. Honor an owner's requested check-in
+before further research dispatch.
+
 - Separate idea generation, development and certification. A promising idea
   may be wrong; give it a constructive pass first. Identify the analogy, the
   structure it suggests, and the statement or calculation that would develop

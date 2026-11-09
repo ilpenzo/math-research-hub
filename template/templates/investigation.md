@@ -5,6 +5,21 @@ Status: open
 Target record IDs:
 Time budget (objective, start and deadline in UTC), if any:
 
+## Current mathematics
+
+Rewrite this section when the mathematical position changes; aim for 500–700
+words. Preserve the dated history and frozen evidence below. Read this section
+first, then only the evidence needed for the current decision. Do not send the
+whole NOTE to each helper.
+
+Exact objects, maps and hypotheses:
+Established deductions and their actual review scope:
+Candidate connection and explicitly conjectural step:
+Decisive controls, retaining the original object/maps:
+One next question and what would change the decision:
+Evidence pointers (selected sections, not another accumulating handoff):
+Current authorization / check-in boundary:
+
 ## Question
 
 The exact statement with every hypothesis: field and characteristic, category

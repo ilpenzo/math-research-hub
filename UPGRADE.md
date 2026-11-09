@@ -1,5 +1,29 @@
 # Updating an existing hub
 
+## Prospector discovery update
+
+This update adds `template/PROSPECTOR.md`, `template/tools/prospector.py`, its
+offline tests and the complete `template/templates/prospector/` directory.
+Copy these together into an existing version 2 hub, and reconcile the discovery
+guidance in AGENTS, CLAUDE, WORKFLOW, PROOF_SWARM and the investigation/helper
+templates with your own rules. Keep your research notes and catalogs intact.
+
+New run files explicitly use `high` for prospect/assay and `xhigh` for selected
+dig work in both backends. Override `effort_by_stage` in the run or `effort` in
+an individual slot deliberately. Existing run files retain their settings;
+neither global CLI settings nor old runs are migrated. Use `run --dry-run`
+to inspect prompts and effective effort without launching or spending calls.
+Tool-free context must be complete; replace an unedited hub seed and remove
+retrieval instructions before dispatch. The first-return time target is soft;
+proof calls have no timeout unless one is explicitly configured.
+
+Update MathDesk's `harness/` package together for compatible worker filtering,
+then restart it with `python3 harness/mathdesk.py restart`. Existing worker
+captures remain on disk but are hidden from conversation and PDF routes.
+The installer still creates a fresh hub; it does not overwrite a live one.
+
+## Earlier releases
+
 The connection-workspace release uses Python 3.11+, multiple Python modules and
 a version 2 manifest. The old instruction to replace just `tools/hub.py` no
 longer applies. The installer creates a new folder and refuses a nonempty one.

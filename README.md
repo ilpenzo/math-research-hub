@@ -73,6 +73,7 @@ records keep plain-text mathematics.
 | `AGENTS.md`, `CLAUDE.md` | the rulebook both assistants load every session |
 | `WORKFLOW.md` | the catalog contract: status, evidence level and novelty kept separate |
 | `PROOF_SWARM.md` | a proof conductor plus five read-only helpers: archive scout, source checker, proof explorer, counterexample checker, proof checker |
+| `PROSPECTOR.md`, `tools/prospector.py` | bounded discovery rounds with distinct strategies, explicit stage effort, early mathematical returns and retained claim cards |
 | `PROMPTS.md` | ready-to-paste requests for everyday work |
 | `projects/NAME/` | per-project rules, guide, topic map, changelog, catalog and one NOTE per investigation |
 | `tools/hub.py` | modular tools: validated transactions, scoped search, local semantic recall, graph/comparison, Gap briefs, durable research memory, saved conversation recovery, literature and computation packages |

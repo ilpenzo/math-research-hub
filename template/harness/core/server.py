@@ -118,7 +118,7 @@ class Desk:
         """After a restart, queue snapshots that are missing (server down or crash mid-print)."""
         if not (self.settings.get('auto_pdf') and self.pdf):
             return
-        finals = [e for e in self.index.events if e['kind'] == 'final'][-60:]
+        finals = [e for e in self.index.events if e['kind'] == 'final' and self.index.is_visible(e)][-60:]
         for event in finals:
             key = 'turn-' + event['id']
             if self.pdf.status(key).get('state') in ('none', 'failed'):
@@ -134,7 +134,8 @@ class Desk:
             time.sleep(0.25)
 
     def on_event(self, event):
-        if event['kind'] != 'final' or (self.booting and event['ts'] < self.boot_cutoff):
+        if (not self.index.is_visible(event) or event['kind'] != 'final'
+                or (self.booting and event['ts'] < self.boot_cutoff)):
             return
         if self.settings.get('auto_pdf') and self.pdf:
             key = 'turn-' + event['id']
@@ -187,7 +188,7 @@ class Desk:
         table = {(s['service'], s['session_id']): dict(s, source='hooks') for s in self.index.sessions()}
         for entry in self.discover():
             key = (entry['service'], entry.get('session_id'))
-            if not entry.get('session_id'):
+            if not entry.get('session_id') or key in self.index.hidden_sessions:
                 continue
             if key in table:
                 table[key]['title'] = table[key].get('title') or entry.get('title')

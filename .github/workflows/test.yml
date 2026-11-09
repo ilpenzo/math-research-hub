@@ -22,5 +22,6 @@ jobs:
         run: |
           python3 template/harness/tests/test_core.py
           python3 template/harness/tests/test_transcripts.py
+          python3 template/harness/tests/test_session_filter.py
           python3 template/harness/tests/test_hubdata.py
           node template/harness/tests/mathsplit.test.js

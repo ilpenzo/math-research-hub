@@ -149,6 +149,15 @@ class ServerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         config.save_settings({'autoopen': 'never', 'auto_pdf': False, 'autostart': False})
+        # Captures from before the filter existed must stay on disk but disappear
+        # from session, event, long-poll and PDF routes after server startup.
+        cls.internal_events = []
+        for service in ('codex', 'claude-code'):
+            event = spool.push_event('Internal worker result $x=1$.', session='old-prospector-' + service,
+                                     cwd=os.path.join(INSIDE, 'prospector', 'run', 'rounds', 'r01', 's1', 'work'))
+            event['service'] = service
+            spool.write_event(event, config.path('spool'))
+            cls.internal_events.append(event)
         cls.proc = subprocess.Popen([sys.executable, os.path.join(HARNESS, 'mathdesk.py'), 'serve'],
                                     env=dict(os.environ), stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         # Ready means answering HTTP, not just accepting connections (slow CI starts).
@@ -242,6 +251,21 @@ class ServerTests(unittest.TestCase):
         status, body, _ = self.request('/api/session/codex/live-1')
         self.assertEqual(status, 200)
         self.assertIn('chi', json.loads(body)['items'][-1]['text'])
+
+    def test_internal_captures_are_unavailable_on_all_routes(self):
+        status, body, _ = self.request('/api/sessions')
+        self.assertEqual(status, 200)
+        ids = {s['session_id'] for s in json.loads(body)['sessions']}
+        _, body, _ = self.request('/api/wait?since=0&timeout=0')
+        notices = {e['id'] for e in json.loads(body)['events']}
+        for event in self.internal_events:
+            self.assertNotIn(event['session_id'], ids)
+            self.assertNotIn(event['id'], notices)
+            self.assertEqual(self.request('/api/event/' + event['id'])[0], 404)
+            route = event['service'] + '/' + event['session_id']
+            self.assertEqual(self.request('/api/session/' + route)[0], 404)
+            self.assertIn(self.request('/pdf/turn/' + event['id'])[0], (404, 503))
+            self.assertIn(self.request('/pdf/session/' + route)[0], (404, 503))
 
     def test_print_nonce_is_read_only_and_scoped(self):
         from core import server

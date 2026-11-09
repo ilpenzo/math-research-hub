@@ -84,6 +84,29 @@ the search index is unavailable.
 
 ## Research method
 
+For a user-authorized proof or construction search, use
+[PROSPECTOR.md](PROSPECTOR.md). Its run budget covers discovery; PROOF_SWARM
+governs certification of a frozen candidate. The owner chooses models, effort
+and budgets. New Prospector runs default to high effort for prospect/assay and
+xhigh for selected dig work; global configurations and old runs are preserved.
+
+During discovery give each helper one mathematical move and minimal named
+inputs. Aim for a useful rough return in a soft 5–10 minutes, with no automatic
+cutoff. Use short adaptive waves, integrate returns promptly and keep the parent
+developing the mathematics. The conductor retrieves evidence once and supplies
+complete obstruction sentences with hypotheses. Tool-free briefs contain all
+needed text and no retrieval instructions; tool-enabled helpers search only
+for a specific blocking fact and report their query and result.
+
+Maintain a rewritten one-page Current mathematics section near the top of the
+existing NOTE, preserving the history and evidence below it. Before delegating
+intuition, consider a few minutes of parent computation on one actual control
+with its original maps. Retain raw evidence and brief failure notes; defer broad
+audits, polish and packaging to selected survivors. Batch administration at
+meaningful decisions. Report discovery gains without repeating proof-endpoint
+disclaimers. Respect budgets, review standards and explicit check-in boundaries;
+these workflow defaults never resume a stopped investigation.
+
 Retrieve, state the missing step, test controls, attempt, review
 independently, record. Before a substantive investigation, write in its NOTE:
 the exact statement; the one missing implication that blocks it; relevant

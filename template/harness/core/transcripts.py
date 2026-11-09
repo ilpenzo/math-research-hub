@@ -29,6 +29,8 @@ import time
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
+from .session_filter import is_internal_session
+
 ADAPTER_VERSION = {"claude-code": "claude-jsonl/1", "codex": "codex-rollout/1"}
 
 GIST_MAX = 160
@@ -1000,6 +1002,8 @@ def _discover_claude(hub_root, since_days, limit, include_subagents, deadline):
             cwd_cache[cwd] = _inside(cwd, root_real)
         if not cwd_cache[cwd]:
             continue
+        if is_internal_session('claude-code', cwd, summary['prompt'], path):
+            continue
         entrypoint = summary['entrypoint'] or ''
         kind = 'sdk' if entrypoint.startswith('sdk') else 'user'
         if kind != 'user' and not include_subagents:
@@ -1076,6 +1080,8 @@ def _codex_from_sqlite(home, root_real, since_days, limit, include_subagents, de
             continue
         path = row.get('rollout_path')
         if not path or not os.path.exists(path):
+            continue
+        if is_internal_session('codex', cwd, row.get('first_user_message'), path):
             continue
         created = row.get('created_at_ms')
         created = created / 1000.0 if created else row.get('created_at')
@@ -1154,6 +1160,8 @@ def _codex_from_files(home, root_real, since_days, limit, include_subagents, dea
             cwd_cache[cwd] = _inside(cwd, root_real)
         if not cwd_cache[cwd]:
             continue
+        if is_internal_session('codex', cwd, transcript_path=path):
+            continue
         kind = _codex_kind(meta)
         if kind != 'user' and not include_subagents:
             continue
@@ -1185,6 +1193,7 @@ def discover(service, hub_root, since_days=14, limit=60, include_subagents=False
     Claude `kind` is "user" or "sdk" (claude -p); Codex `kind` is the thread
     source ("user", "subagent", "guardian_review").  Non-user sessions are
     returned only with include_subagents=True.  Bounded to about 1 s.
+    Internal Prospector workers are omitted even when include_subagents=True.
     """
     service = _service(service)
     deadline = time.monotonic() + _DISCOVER_BUDGET

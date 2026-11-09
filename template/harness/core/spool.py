@@ -12,6 +12,8 @@ import threading
 import time
 from datetime import datetime, timezone
 
+from .session_filter import is_internal_session
+
 SERVICES = ('claude-code', 'codex', 'desk')   # desk: documents pushed with `mathdesk.py push`
 MAX_TEXT = 2000000
 MATH_RE = re.compile(r'\$\$|\$[^\s$]|\\\(|\\\[|\\begin\{')
@@ -35,6 +37,8 @@ def event_from_hook(service, payload, inside, project_of):
         return None
     cwd = payload.get('cwd') or ''
     if not inside(cwd):
+        return None
+    if is_internal_session(service, cwd, payload.get('prompt'), payload.get('transcript_path')):
         return None
     name = payload.get('hook_event_name')
     if name == 'Stop':
@@ -158,6 +162,23 @@ class SpoolIndex:
         self.seen_files = set()
         self.dedupe = set()
         self.listeners = []
+        self.hidden_sessions = set()
+        self.first_prompts = {}
+
+    def is_visible(self, event):
+        """Hide the whole worker session, including earlier captures lacking a cwd."""
+        key = (event['service'], event['session_id'])
+        if key in self.hidden_sessions:
+            return False
+        prompt = None
+        if event['kind'] == 'prompt' and self.first_prompts.setdefault(key, event['id']) == event['id']:
+            prompt = event['text']
+        if is_internal_session(event['service'], event.get('cwd'),
+                               prompt,
+                               event.get('transcript_path')):
+            self.hidden_sessions.add(key)
+            return False
+        return True
 
     @property
     def seq(self):
@@ -193,8 +214,14 @@ class SpoolIndex:
         if fresh:
             fresh.sort(key=lambda e: e['ts'])
             with self.lock:
+                # Classify the full batch before publishing any event: a final
+                # and its identifying prompt may arrive out of timestamp order.
+                for event in fresh:
+                    self.is_visible(event)
                 added = []
                 for event in fresh:
+                    if not self.is_visible(event):
+                        continue
                     mark = (event['service'], event['session_id'], event.get('turn_id'),
                             event['kind'], event['text_sha256'])
                     if event['id'] in self.by_id or (event.get('turn_id') and mark in self.dedupe):
@@ -229,22 +256,25 @@ class SpoolIndex:
                 if left <= 0:
                     break
                 self.lock.wait(left)
-            return [summary(e) for e in self.events[since:]], self.seq
+            return [summary(e) for e in self.events[since:] if self.is_visible(e)], self.seq
 
     def get(self, ident):
         with self.lock:
-            return self.by_id.get(ident)
+            event = self.by_id.get(ident)
+            return event if event and self.is_visible(event) else None
 
     def session_events(self, service, session_id):
         with self.lock:
             return [e for e in self.events
-                    if e['service'] == service and e['session_id'] == session_id]
+                    if e['service'] == service and e['session_id'] == session_id and self.is_visible(e)]
 
     def sessions(self):
         """Sessions known from hook events, most recently active first."""
         table = {}
         with self.lock:
             for event in self.events:
+                if not self.is_visible(event):
+                    continue
                 key = (event['service'], event['session_id'])
                 entry = table.get(key)
                 if entry is None:

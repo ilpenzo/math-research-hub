@@ -1,0 +1,97 @@
+{
+  "note": "Strategy lenses for Prospector explorers, in default selection order. backend is a hint: codex slots can compute; claude slots have no tools and are used for idea-heavy lenses. blind slots do not see earlier rounds. A run may add lenses with run.json lenses_extra.",
+  "lenses": [
+    {
+      "id": "weakest-sufficient",
+      "name": "Weakest sufficient statement",
+      "backend": "any",
+      "instruction": "Find the weakest intermediate statement that would still imply the target or close the current gap. Give two or three such candidates, say why each suffices, and judge which is most likely true and provable. Then make a first serious attempt at the best one."
+    },
+    {
+      "id": "analogy-transfer",
+      "name": "Analogy transfer",
+      "backend": "claude",
+      "instruction": "Find a solved problem elsewhere in mathematics with the same shape (same quantifiers, same kind of obstruction or selection problem). Name the theorem and, more importantly, its proof mechanism. Map its objects and maps to ours explicitly and state exactly what the transferred mechanism would need here."
+    },
+    {
+      "id": "compute-examples",
+      "name": "Compute and conjecture",
+      "backend": "codex",
+      "instruction": "Compute explicit or small cases relevant to the gap (Macaulay2, Sage or Python in your working directory). Look for the pattern, then state a conjecture fitted to the data and explain why the pattern should persist. Report the data and commands."
+    },
+    {
+      "id": "counterexample-hunt",
+      "name": "Counterexample hunt",
+      "backend": "codex",
+      "instruction": "Try to disprove the target or its current key step. Build the most dangerous candidate that satisfies every hypothesis and test it, computationally where possible. If it fails to be a counterexample, say what property saved the statement: that property is a proof lead."
+    },
+    {
+      "id": "obstruction-as-data",
+      "name": "Obstruction as data",
+      "backend": "claude",
+      "instruction": "Take a recorded obstruction or failed route from the frontier and treat it as information, not a wall. What structure does the failure expose (an extension class, a monodromy, a missing compatibility, a boundary object)? Propose a modified statement or construction that uses that structure."
+    },
+    {
+      "id": "extremal-choice",
+      "name": "Extremal choice",
+      "backend": "any",
+      "instruction": "Choose an object that is extremal for a well-defined numerical quantity (least, greatest, minimal under inclusion) and show that failure of the target would contradict extremality. Say exactly which quantity, why the extremum exists, and why it is canonical if naturality is required."
+    },
+    {
+      "id": "local-to-global",
+      "name": "Local to global",
+      "backend": "any",
+      "instruction": "Solve the problem locally (on charts, at points, formally or on strata). Identify the obstruction to gluing as a class, cocycle or compatibility condition, then find a reason it vanishes or a modification that kills it."
+    },
+    {
+      "id": "change-category",
+      "name": "Change of setting",
+      "backend": "claude",
+      "instruction": "Move the problem to a setting where a strong tool exists: analytic, formal, stacks, derived categories, valuations, toric or tropical degeneration, positive characteristic, a moduli or Hilbert scheme. Say what the tool gives there and exactly how to return to the original setting."
+    },
+    {
+      "id": "strengthen-to-induct",
+      "name": "Strengthen and induct",
+      "backend": "any",
+      "instruction": "Formulate a stronger statement that carries its own inductive hypothesis (on dimension, rank, number of steps, a well-ordered invariant). Prove or sketch the inductive step and identify the exact case where it would break."
+    },
+    {
+      "id": "degenerate-deform",
+      "name": "Degenerate and deform",
+      "backend": "any",
+      "instruction": "Specialize to a computable case (toric, split, product, generic, a family with special fibre) where the statement can be decided, then deform, spread out or specialize back. Identify which property must be stable under the deformation."
+    },
+    {
+      "id": "monovariant",
+      "name": "Monovariant",
+      "backend": "any",
+      "instruction": "Find an integer-valued or well-ordered invariant that strictly decreases under a natural operation and is bounded below, so that termination of the operation yields the target. Check that the operation is canonical when naturality is required."
+    },
+    {
+      "id": "dual-view",
+      "name": "Dual view",
+      "backend": "claude",
+      "instruction": "Dualize: divisors versus curves, ideals versus valuations, sheaves versus duals, a functor versus its adjoint, a cone versus its dual. Restate the gap on the dual side, where it may become a finiteness or positivity statement with known tools, and attack it there."
+    },
+    {
+      "id": "simplify-target",
+      "name": "Simplest open case",
+      "backend": "any",
+      "instruction": "Find the simplest nontrivial case that the recorded results do not yet cover and solve it completely. The deliverable is the mechanism that works there, stated so that it might generalize."
+    },
+    {
+      "id": "literature-mechanism",
+      "name": "Literature mechanism",
+      "backend": "codex",
+      "instruction": "Start with the named primary excerpts and source checks. Extract a proof mechanism that fits the gap, with an exact locator, and adapt its objects and maps. Search the hub library or catalog only if a specific missing theorem or hypothesis blocks this move; report the missing fact, search terms and coverage.",
+      "instruction_tool_free": "Use the supplied primary excerpts and source checks to extract a proof mechanism that fits the gap. Adapt its actual objects and maps with an exact supplied locator. If a theorem or hypothesis needed for the transfer is absent, identify that missing input precisely."
+    },
+    {
+      "id": "wild-card",
+      "name": "Wild card",
+      "backend": "claude",
+      "blind": true,
+      "instruction": "Unconstrained: propose the most unusual approach you believe has a real chance of working, ignoring which directions have been popular. Be concrete about the first calculation or construction that would test it."
+    }
+  ]
+}
