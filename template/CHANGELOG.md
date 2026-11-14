@@ -30,6 +30,12 @@ in each project's CHANGELOG.md. Newest first.
   verdicts carry its result and raw output. Falsifiers run scripts in their
   own sandbox; `prospector.py` never executes model-written code.
 
+- Prospector search upgrade, selection by evidence: cards are chosen for
+  assay and dig by recorded evidence (kill script passed, assay verdicts)
+  before self-reported confidence. New run files weight lens choice by each
+  lens's survivor rate in the project's earlier runs, seeded and with a slot
+  reserved for untried lenses; with no history the order is unchanged.
+
 - Connection-workspace release: modular publication kernel, scoped lexical/local
   semantic recall, graph/comparison, research aids and Gap briefs, durable frontier
   choices and same-service saved-context recovery. Fresh installation contains

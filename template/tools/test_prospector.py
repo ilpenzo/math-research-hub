@@ -1144,5 +1144,158 @@ class KillScriptTests(RunCase):
         self.assertEqual(pr.read_jsonl(self.run / 'dispositions.jsonl')[-1]['kill_script']['status'], 'none')
 
 
+class EvidenceSelectionTests(RunCase):
+    """Item 5: recorded evidence outranks self-reported confidence; lens weights are seeded."""
+
+    SCRIPT = dict(language='python', source='print(1)', expected_if_true='1')
+
+    def propose(self, confidence, script=False):
+        call('plan', str(self.run), '-n', '1', '--backend', 'stub', '--target-only')
+        number = pr.round_numbers(self.run)[-1]
+        slots = self.slots(number)
+        slots[0]['stub_confidence'] = confidence
+        if script:
+            slots[0]['stub_script'] = self.SCRIPT
+        self.write_slots(number, slots)
+        call('run', str(self.run))
+        return pr.read_jsonl(self.run / 'cards.jsonl')[-1]['id']
+
+    def assay(self, card, script_status=None):
+        call('plan', str(self.run), '--stage', 'assay', '--backend', 'stub', '--cards', card)
+        number = pr.round_numbers(self.run)[-1]
+        slots = self.slots(number)
+        if script_status:
+            slots[0]['stub_script_status'] = {card: script_status}
+        self.write_slots(number, slots)
+        call('run', str(self.run))
+
+    def test_cards_rank_on_recorded_evidence_before_confidence(self):
+        confident = self.propose(.95)
+        testable = self.propose(.40, script=True)
+        passed = self.propose(.10, script=True)
+        failed = self.propose(.99, script=True)
+        self.assay(passed, 'passed')
+        self.assay(failed, 'failed')
+        for card in (passed, failed):   # reopened by the conductor: evidence stays on record
+            call('mark', str(self.run), card, '--status', 'open', '--reason', 'look again')
+        self.assertEqual(pr.top_open_cards(self.run, 4, 'assay'), [passed, testable, confident, failed])
+        call('plan', str(self.run), '--stage', 'assay', '--backend', 'stub', '-n', '1', '--per-slot', '1')
+        self.assertEqual(self.slots(pr.round_numbers(self.run)[-1])[0]['cards'], [passed])
+        listing = call('cards', str(self.run))
+        self.assertIn('script-passed/assay+1', listing)
+        self.assertIn('script-failed/assay+1', listing)
+        self.assertIn('script-none/assay+0', listing)
+
+    def test_dig_pool_and_feed_forward_prefer_tested_survivors(self):
+        bold = self.propose(.90)
+        tested = self.propose(.20, script=True)
+        twice = self.propose(.30)
+        self.assay(bold)
+        self.assay(tested, 'passed')
+        self.assay(twice)
+        self.assay(twice)
+        self.assertEqual(pr.top_open_cards(self.run, 3, 'dig'), [tested, twice, bold])
+        self.edit_spec(feed_forward=dict(survivors=1, kills=0, open=0))
+        spec = pr.load(self.run / 'run.json')
+        text = pr.feed_forward(self.run, spec)
+        self.assertIn(tested, text)
+        self.assertNotIn(bold, text, 'the one forwarded survivor is the tested one, not the confident one')
+        call('mark', str(self.run), bold, '--status', 'survives', '--reason', 'conductor likes it')
+        self.assertEqual(pr.top_open_cards(self.run, 3, 'dig'), [tested, twice, bold],
+                         'a conductor mark is a decision, not an extra assay verdict')
+
+    def earlier_run(self, name, record, project='fixture'):
+        """A finished run of the project inside the temporary hub: {lens: (survived, killed)}."""
+        old = self.tmp / 'projects' / project / 'investigations' / '2026-01-01-topic' / 'prospector' / name
+        old.mkdir(parents=True)
+        pr.dump(old / 'run.json', dict(kind='prospector-run', project=project, name=name))
+        k = 0
+        for lens, (survived, killed) in record.items():
+            for outcome in ['survives'] * survived + ['killed'] * killed:
+                k += 1
+                card = dict(id=f'r01-s{k}-c1', stage='prospect', lens=lens, kind='lemma', confidence=.5)
+                pr.append(old / 'cards.jsonl', card)
+                pr.append(old / 'dispositions.jsonl', dict(card=card['id'], status=outcome, by='r02-s1'))
+        return old
+
+    def lenses_planned(self, *extra, n='2'):
+        # A replaced plan's lenses count as used (unchanged behaviour), so start from the same state.
+        (self.run / 'rounds' / 'r01' / 'slots.json').unlink(missing_ok=True)
+        call('plan', str(self.run), '-n', n, '--backend', 'stub', '--round', '1', '--target-only', *extra)
+        return [slot['lens'] for slot in self.slots(1)]
+
+    def test_without_history_or_without_the_setting_the_library_order_is_kept(self):
+        _, order = pr.lenses(pr.load(self.run / 'run.json'))
+        with patch.object(pr, 'HUB', self.tmp):
+            self.assertEqual(pr.load(self.run / 'run.json')['lens_selection']['mode'], 'survivor-rate')
+            self.assertEqual(self.lenses_planned(n='4'), order[:4], 'no earlier runs: current order')
+            self.earlier_run('other-project', {'wild-card': (9, 0)}, project='elsewhere')
+            self.assertEqual(self.lenses_planned(n='4'), order[:4], "another project's runs do not count")
+            self.earlier_run('unassayed', {})
+            self.assertEqual(self.lenses_planned(n='4'), order[:4], 'runs with no verdicts are no history')
+            self.earlier_run('old', {'wild-card': (9, 0), 'weakest-sufficient': (0, 9)})
+            self.assertNotEqual(self.lenses_planned(n='4'), order[:4])
+            spec = pr.load(self.run / 'run.json')
+            spec.pop('lens_selection')            # a run file from before the setting existed
+            pr.dump(self.run / 'run.json', spec)
+            self.assertEqual(self.lenses_planned(n='4'), order[:4])
+
+    def test_weighting_is_deterministic_under_a_seed_and_follows_survivor_rate(self):
+        _, order = pr.lenses(pr.load(self.run / 'run.json'))
+        record = {lens: (0, 10) for lens in order}
+        record.update({'dual-view': (10, 0)})
+        with patch.object(pr, 'HUB', self.tmp):
+            self.earlier_run('old', record)
+            first = self.lenses_planned('--seed', '7')
+            self.assertEqual(self.lenses_planned('--seed', '7'), first, 'same seed, same plan')
+            self.edit_spec(lens_selection=dict(mode='survivor-rate', seed=7, explore_slots=1))
+            self.assertEqual(self.lenses_planned(), first, 'the run file seed gives the same plan')
+            picks = [self.lenses_planned('--seed', str(seed), n='1')[0] for seed in range(60)]
+            self.assertGreater(len(set(picks)), 1, 'different seeds explore different lenses')
+            counts = {lens: picks.count(lens) for lens in order}
+            self.assertEqual(max(counts, key=counts.get), 'dual-view')
+            self.assertGreater(counts['dual-view'], 20, 'a lens that survived is chosen far more often')
+            self.assertIn('weighted by survivor rate over 1 earlier runs (seed 3)',
+                          call('plan', str(self.run), '-n', '2', '--backend', 'stub', '--force',
+                               '--round', '1', '--seed', '3'))
+            (self.run / 'rounds' / 'r01' / 'slots.json').unlink()
+            call('plan', str(self.run), '-n', '2', '--backend', 'stub', '--round', '1', '--seed', '3')
+            again = [slot['lens'] for slot in self.slots(1)]
+            call('plan', str(self.run), '-n', '2', '--backend', 'stub', '--round', '2', '--seed', '3')
+            self.assertEqual(len(set(again) | {slot['lens'] for slot in self.slots(2)}), 4,
+                             'the next round draws afresh from the lenses not yet used')
+
+    def test_untried_lenses_keep_a_turn_and_used_lenses_wait(self):
+        _, order = pr.lenses(pr.load(self.run / 'run.json'))
+        record = {lens: (5, 5) for lens in order if lens not in ('monovariant', 'wild-card')}
+        with patch.object(pr, 'HUB', self.tmp):
+            self.earlier_run('old', record)
+            for seed in range(10):
+                chosen = self.lenses_planned('--seed', str(seed))
+                self.assertEqual(chosen[0], 'monovariant',
+                                 'one slot is reserved for a lens with no record, in library order')
+            self.assertEqual(len(self.lenses_planned('--seed', '1', n='1')), 1,
+                             'a single slot is not reserved; untried lenses compete at one half')
+            self.edit_spec(lens_selection=dict(mode='survivor-rate', seed=0, explore_slots=0))
+            self.assertTrue(any(self.lenses_planned('--seed', str(seed))[0] != 'monovariant'
+                                for seed in range(10)))
+            self.edit_spec(lens_selection=dict(mode='survivor-rate', seed=0, explore_slots=1))
+            first = self.lenses_planned()
+            call('run', str(self.run))
+            call('plan', str(self.run), '-n', str(len(order) - 2), '--backend', 'stub', '--target-only')
+            later = [slot['lens'] for slot in self.slots(2)]
+            self.assertFalse(set(first) & set(later), 'lenses used in this run wait until the rest had a turn')
+            self.assertEqual(len(set(later)), len(order) - 2)
+
+    def test_selection_changes_no_status_and_spends_nothing(self):
+        card = self.propose(.5, script=True)
+        self.assay(card, 'passed')
+        before = (pr.budget_use(self.run)[0], dict(pr.card_status(self.run)))
+        pr.top_open_cards(self.run, 3, 'dig')
+        call('plan', str(self.run), '--stage', 'dig', '--backend', 'stub')
+        self.assertEqual((pr.budget_use(self.run)[0], dict(pr.card_status(self.run))), before)
+        self.assertEqual(pr.card_status(self.run)[card], 'survives', 'never promoted by ranking')
+
+
 if __name__ == '__main__':
     unittest.main()

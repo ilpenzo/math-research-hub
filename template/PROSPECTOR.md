@@ -144,7 +144,8 @@ for a proof that overcame an obstruction of the same shape, and give
 explorers the proof itself. See [Mechanism search](#mechanism-search).
 
 **1. Prospect.** `plan` assigns distinct strategy lenses, unused ones first,
-from `templates/prospector/lenses.json`. Idea lenses go to Claude and
+from `templates/prospector/lenses.json` (see [Selection](#selection) for how
+earlier runs weight the choice). Idea lenses go to Claude and
 computing lenses to Codex, which may run Macaulay2, Sage and Python in its own
 work directory. Edit `slots.json` (lens, backend, up to three named file
 sections, a note), then `run`. Explorers do not see each other. From the
@@ -245,6 +246,37 @@ from the easiest.
   fit is left out and the prompt says so; it is never clipped. `run` warns
   about each omission, so check a dry run. The prompt-size warning counts the
   prompt without these inlined texts, which are expected to be long.
+
+## Selection
+
+Selection decides what gets the next call. It never changes a card's status
+and never spends anything.
+
+- **Cards.** `plan --stage assay` and `plan --stage dig` choose cards by
+  recorded evidence first: a kill script that ran and passed, then the
+  number of assay verdicts of `survives` from model slots. A card whose
+  script failed goes last. Among cards with equal evidence, one that has a
+  kill script comes before one that has none, because it can be tested now.
+  The card's self-reported `confidence` only breaks remaining ties.
+  Feed-forward orders survivors the same way, and `cards RUN` shows each
+  card's evidence beside its confidence. A conductor `mark` is a decision,
+  not an extra verdict. Name cards with `--cards` to choose yourself.
+- **Lenses.** Within a run, lenses not yet used come first. With
+  `lens_selection.mode` set to `survivor-rate` (the default in new run
+  files) and at least one other run of the same project that has assayed
+  prospect cards, `plan` weights the choice by each lens's recorded survivor
+  rate in that project: surviving cards over cards that reached a verdict,
+  smoothed so that a lens with no record counts as one half. When a round
+  has two or more slots, `explore_slots` of them (default 1, at most half)
+  go to lenses with no record. The draw is seeded by `lens_selection.seed`
+  (or `plan --seed N`) and the round number, so the same run state and seed
+  give the same plan, and `plan` prints the rates it used. With no such
+  history, or in a run file without the setting, the order is the library
+  order as before. Re-planning a round with `--force` still counts the
+  replaced plan's lenses as used.
+
+A survivor rate from a handful of cards is weak evidence about a lens. It
+biases the order of exploration; it is not a finding.
 
 ## Mechanism search
 
@@ -414,7 +446,15 @@ its record IDs and evidence paths under `hidden` in `run.json`, frame the
 frontier as it stood before the result, and see whether a run rediscovers it
 and at what cost. The tool refuses to inline hidden material and tells
 explorers not to open it; Codex explorers can still read the hub, so this is
-instructed, not enforced.
+instructed, not enforced. The same refusal covers solved-variant proofs,
+variant statements, mechanism excerpts and mechanism queries.
+
+To compare two designs, run the same frontier twice with the same budget and
+seed, changing one setting, for example `lens_selection.mode`,
+`variant_ladder.prefer_open`, or whether a variants round and a mechanism
+search come first. Compare rediscovery, calls used, survivors per call and
+the conductor's repair burden. One pair of runs is an anecdote; several
+targets are needed before preferring a design.
 
 ## Commands
 
@@ -425,7 +465,7 @@ python3 tools/prospector.py mechanism RUN query "..." --where "arXiv"
 python3 tools/prospector.py mechanism RUN result q1 --result "..." [--source "..."]
 python3 tools/prospector.py mechanism RUN excerpt FILE --title "..." --source "..." --locator "..."
 python3 tools/prospector.py mechanism RUN list
-python3 tools/prospector.py plan RUN [-n 6] [--target-only | --variant ID]
+python3 tools/prospector.py plan RUN [-n 6] [--target-only | --variant ID] [--seed N]
 python3 tools/prospector.py plan RUN --stage variants
 python3 tools/prospector.py variant RUN list
 python3 tools/prospector.py variant RUN add --title "..." --statement "..." --kind special-case --relation implied-by-target --difficulty 2

@@ -14,6 +14,11 @@ changes selection or permissions is off unless a run file asks for it.
   `max_per_slot`) and `default_slots.variants`. A run with no variants plans
   and prompts exactly as before. Prompts now also carry survivors' full
   sketches, counted against `max_inline_chars` after named context files.
+- Selection. Default card choice for assay and dig now ranks recorded
+  evidence before confidence in every run, old or new; pass `--cards` to
+  choose yourself. Lens weighting needs the new run setting `lens_selection`
+  (`mode`, `seed`, `explore_slots`); a run file without it keeps the library
+  order.
 - Kill scripts. `card.schema.json` gained a required `kill_script` on cards
   and `kill_script_result` on verdicts, so it must be copied together with
   the tool. Cards and verdicts recorded before the change are read as having

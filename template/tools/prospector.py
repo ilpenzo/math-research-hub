@@ -13,6 +13,7 @@ import json
 import math
 import os
 from pathlib import Path
+import random
 import re
 import shutil
 import statistics
@@ -132,6 +133,32 @@ def card_status(run):
     for event in read_jsonl(run / 'dispositions.jsonl'):
         status[event['card']] = event['status']
     return status
+
+
+def card_evidence(run):
+    """What the run has recorded about each card: script outcomes and model assay verdicts."""
+    evidence = {}
+    for event in read_jsonl(run / 'dispositions.jsonl'):
+        item = evidence.setdefault(event['card'], dict(script=None, survives=0))
+        ran = (event.get('kill_script') or {}).get('status')
+        if ran == 'failed' or (ran == 'passed' and item['script'] != 'failed'):
+            item['script'] = ran
+        if event.get('by') != 'conductor' and event['status'] == 'survives':
+            item['survives'] += 1
+    return evidence
+
+
+def evidence_key(card, evidence):
+    """Sort key, best first: recorded evidence, then testability, then self-reported confidence."""
+    item = evidence.get(card['id']) or dict(script=None, survives=0)
+    script = {'passed': 1, 'failed': -1}.get(item['script'], 0)
+    testable = bool(((card.get('kill_script') or {}).get('source') or '').strip())
+    return (-script, -item['survives'], -int(testable), -float(card.get('confidence') or 0))
+
+
+def evidence_tag(card, evidence):
+    item = evidence.get(card['id']) or dict(script=None, survives=0)
+    return (f"script-{item['script']}" if item['script'] else 'script-none') + f"/assay+{item['survives']}"
 
 
 def budget_use(run):
@@ -529,10 +556,79 @@ def next_round(run):
     return (numbers[-1] + 1) if numbers else 1
 
 
-def plan_prospect(run, spec, count):
+def project_runs(project, exclude):
+    """Other Prospector runs of this project kept in the hub."""
+    roots = [HUB / 'investigations'] + sorted((HUB / 'projects').glob('*/investigations'))
+    found = []
+    for root in roots:
+        for path in sorted(root.rglob('run.json')):
+            try:
+                spec = load(path)
+            except (OSError, ValueError):
+                continue
+            if (isinstance(spec, dict) and spec.get('kind') == 'prospector-run'
+                    and spec.get('project') == project and path.parent.resolve() != exclude):
+                found.append(path.parent)
+    return found
+
+
+def lens_history(runs):
+    """Per lens: prospect cards that reached a verdict, and how many of those survived."""
+    decided, survived = Counter(), Counter()
+    for run in runs:
+        try:
+            status, cards = card_status(run), cards_by_id(run)
+        except (OSError, ValueError, KeyError):
+            continue  # an unreadable old run contributes nothing
+        for card in cards.values():
+            if card.get('stage') != 'prospect' or not card.get('lens'):
+                continue
+            state = status.get(card['id'])
+            if state in ('survives', 'promoted', 'killed', 'unclear'):
+                decided[card['lens']] += 1
+                survived[card['lens']] += state in ('survives', 'promoted')
+    return decided, survived
+
+
+def choose_lenses(run, spec, order, used, count, number, seed):
+    """Lens ids for a prospect round, and a note on how they were chosen.
+
+    Without the run setting, or without earlier runs of the project, this is the original
+    rule: least used in this run, then library order.
+    """
+    plain = sorted(order, key=lambda lens: (used[lens], order.index(lens)))
+    settings = spec.get('lens_selection') or {}
+    if settings.get('mode') != 'survivor-rate':
+        return plain[:count], ''
+    earlier = project_runs(spec.get('project'), run)
+    decided, survived = lens_history(earlier)
+    if not sum(decided.values()):
+        return plain[:count], 'no earlier runs of this project with assayed cards: library order'
+    own_decided, own_survived = lens_history([run])
+    decided, survived = decided + own_decided, survived + own_survived
+    seed = settings.get('seed', 0) if seed is None else seed
+    rng = random.Random(f'{seed}:{number}')
+    # Smoothed survivor rate; a lens with no record starts at one half, so it is never shut out.
+    rate = {lens: (survived[lens] + 1) / (decided[lens] + 2) for lens in order}
+    # Weighted sampling without replacement, drawn in library order so a seed fixes the result.
+    draw = {lens: rng.random() ** (1 / rate[lens]) for lens in order}
+    reserve = max(0, min(int(settings.get('explore_slots', 1)), count // 2))
+    untried = [lens for lens in plain if not decided[lens]][:reserve]
+    weighted = sorted((lens for lens in order if lens not in untried),
+                      key=lambda lens: (used[lens], -draw[lens]))
+    chosen = untried + weighted[:count - len(untried)]
+    note = (f'weighted by survivor rate over {len(earlier)} earlier runs (seed {seed}); '
+            + ', '.join(f"{lens} {survived[lens]}/{decided[lens]}"
+                        + (' untried, reserved' if lens in untried else '') for lens in chosen))
+    return chosen, note
+
+
+def plan_prospect(run, spec, count, number=None, seed=None):
     library, order = lenses(spec)
     used = Counter(slot.get('lens') for _, slot in all_slots(run) if slot.get('stage') == 'prospect')
-    chosen = sorted(order, key=lambda lens: (used[lens], order.index(lens)))[:count]
+    chosen, note = choose_lenses(run, spec, order, used, count, number or next_round(run), seed)
+    if note:
+        print(f'Lenses: {note}')
     _, claude_used, _ = budget_use(run)
     budget = spec['budget']
     claude_left = max(0, min(budget.get('claude_per_round', 2), budget['claude_calls'] - claude_used))
@@ -575,7 +671,8 @@ def top_open_cards(run, count, stage):
     status = card_status(run)
     wanted = ('open',) if stage == 'assay' else ('survives', 'promoted')
     pool = [c for c in cards_by_id(run).values() if status[c['id']] in wanted and c['kind'] != 'argument']
-    pool.sort(key=lambda c: -float(c.get('confidence') or 0))
+    evidence = card_evidence(run)
+    pool.sort(key=lambda c: evidence_key(c, evidence))
     return [c['id'] for c in pool[:count]]
 
 
@@ -595,8 +692,8 @@ def cmd_plan(args):
     defaults.update(spec.get('default_slots') or {})
     args.n = args.n or defaults[args.stage]
     if args.stage == 'prospect':
-        slots = assign_ladder(run, spec, plan_prospect(run, spec, args.n), args.variant,
-                              args.target_only)
+        slots = assign_ladder(run, spec, plan_prospect(run, spec, args.n, number, args.seed),
+                              args.variant, args.target_only)
     elif args.stage == 'variants':
         slots = [dict(id=f's{i}', stage='variants', backend=args.backend or 'codex', files=[], note='')
                  for i in range(1, args.n + 1)]
@@ -695,8 +792,9 @@ def feed_forward(run, spec, budget=None):
         reasons[event['card']] = event.get('reason', '')
         if event['status'] in ('survives', 'promoted'):
             judges.setdefault(event['card'], []).append(event['by'])
+    evidence = card_evidence(run)
     alive = sorted((c for c in cards if status[c['id']] in ('survives', 'promoted')),
-                   key=lambda c: -float(c.get('confidence') or 0))[:limits.get('survivors', 6)]
+                   key=lambda c: evidence_key(c, evidence))[:limits.get('survivors', 6)]
     dead = [c for c in cards if status[c['id']] == 'killed'][-limits.get('kills', 12):]
     pending = [c for c in cards if status[c['id']] == 'open'][:limits.get('open', 10)]
     if not (alive or dead or pending):
@@ -1554,9 +1652,10 @@ def cmd_cards(args):
         return
     rows = [c for c in known.values() if (not args.status or status[c['id']] in args.status)
             and (not args.round or c['round'] == args.round)]
+    evidence = card_evidence(run)
     for card in rows:
-        print(f"{card['id']:14} {status[card['id']]:9} {card['confidence']:.2f} {card['kind']:14} "
-              f"{card['backend']:6} {clip(card['title'], 90)}")
+        print(f"{card['id']:14} {status[card['id']]:9} {evidence_tag(card, evidence):22} "
+              f"{card['confidence']:.2f} {card['kind']:14} {card['backend']:6} {clip(card['title'], 90)}")
     print(f'{len(rows)} cards')
 
 
@@ -1756,11 +1855,13 @@ def main(argv=None):
     p.add_argument('run_dir')
     p.add_argument('--stage', choices=STAGES, default='prospect')
     p.add_argument('-n', type=int, help='Slots (new-run defaults: 2 prospect, 1 assay, 1 dig, 1 variants)')
-    p.add_argument('--cards', nargs='+', help='Cards to assay or dig (default: best open/surviving)')
+    p.add_argument('--cards', nargs='+',
+                   help='Cards to assay or dig (default: best recorded evidence, then confidence)')
     p.add_argument('--per-slot', type=int, default=2, help='Cards per assay slot')
     p.add_argument('--backend', choices=BACKENDS, help='Override every slot backend')
     p.add_argument('--round', type=int)
     p.add_argument('--force', action='store_true')
+    p.add_argument('--seed', type=int, help='Seed for weighted lens choice (default: lens_selection.seed)')
     p.add_argument('--depth', choices=DEPTHS, help='dig only: deep = sustained work, no time or word target')
     p.add_argument('--variant', help='Aim every prospect slot at this open variant')
     p.add_argument('--target-only', action='store_true',

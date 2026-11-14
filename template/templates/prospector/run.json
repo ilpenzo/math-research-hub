@@ -38,6 +38,7 @@
   "mechanism_search": {"refuse_shared_words": 6},
   "deep_dig": {"claude_tools": false, "claude_tool_names": "Read,Write,Edit,Glob,Grep,Bash", "claude_max_turns": 60},
   "lenses_extra": null,
+  "lens_selection": {"mode": "survivor-rate", "seed": 0, "explore_slots": 1},
   "budget_changes": [],
   "outcome": null
 }

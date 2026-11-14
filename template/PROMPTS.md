@@ -123,6 +123,13 @@ and then:
 > derivation and scratch notes yourself and tell me the earliest remaining
 > gap.
 
+**Compare two search designs on a known result.**
+> Set up a Prospector retrodiction benchmark for [reviewed record ID] in
+> project [project], following "Measuring" in PROSPECTOR.md. Hide the result
+> and its evidence, frame the frontier as it stood before, and prepare two
+> runs that differ in one setting. Show me both dry runs and the total call
+> budget, and launch nothing until I authorize it.
+
 ## Finishing
 
 **Close out.**
