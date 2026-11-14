@@ -37,6 +37,8 @@ certified; label every unproved step as such.
 
 {{frontier}}
 
+{{ladder}}
+
 {{feed_forward}}
 
 {{context}}

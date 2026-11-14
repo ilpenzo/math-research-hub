@@ -1,0 +1,26 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "variants"],
+  "properties": {
+    "summary": {"type": "string"},
+    "variants": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title", "kind", "statement", "relation", "relation_status", "relation_argument", "difficulty", "first_step"],
+        "properties": {
+          "title": {"type": "string"},
+          "kind": {"type": "string", "enum": ["special-case", "lower-dimension", "stronger-hypothesis", "weaker-conclusion", "analogue"]},
+          "statement": {"type": "string"},
+          "relation": {"type": "string", "enum": ["implies-target", "implied-by-target", "analogue"]},
+          "relation_status": {"type": "string", "enum": ["proved", "conjectured"]},
+          "relation_argument": {"type": "string"},
+          "difficulty": {"type": "integer"},
+          "first_step": {"type": "string"}
+        }
+      }
+    }
+  }
+}

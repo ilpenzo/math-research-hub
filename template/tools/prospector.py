@@ -23,7 +23,7 @@ import time
 
 HUB = Path(__file__).resolve().parent.parent
 TEMPLATES = HUB / 'templates' / 'prospector'
-STAGES = ('prospect', 'assay', 'dig')
+STAGES = ('prospect', 'assay', 'dig', 'variants')
 BACKENDS = ('codex', 'claude', 'stub')
 STATUSES = ('open', 'survives', 'killed', 'unclear', 'promoted', 'parked', 'duplicate')
 COMPLETED = ('ok', 'parse-error')
@@ -31,6 +31,12 @@ OUTCOMES = ('proof-candidate', 'partial', 'counterexample', 'reduction', 'none')
 CARD_KINDS = ('lemma', 'construction', 'reduction', 'counterexample', 'strategy', 'argument')
 CARD_TEXT = ('title', 'statement', 'role', 'sketch', 'weakest_step', 'kill_test',
              'evidence', 'differs_from', 'gap_after')
+VARIANT_STATUSES = ('open', 'solved', 'refuted', 'parked')
+VARIANT_KINDS = ('special-case', 'lower-dimension', 'stronger-hypothesis', 'weaker-conclusion',
+                 'analogue')
+VARIANT_RELATIONS = ('implies-target', 'implied-by-target', 'analogue')
+VARIANT_TEXT = ('title', 'statement', 'relation_argument', 'first_step')
+DEFAULT_REVIEW_SCOPE = 'unreviewed lead'
 FRONTIER_WORD_LIMIT = 1200
 HEARTBEAT_SECONDS = 30
 MONITOR_SECONDS = 1
@@ -129,6 +135,184 @@ def lenses(spec):
     return {lens['id']: lens for lens in library}, [lens['id'] for lens in library]
 
 
+# variants ------------------------------------------------------------------
+
+def variants_by_id(run):
+    return {variant['id']: variant for variant in read_jsonl(run / 'variants.jsonl')}
+
+
+def variant_state(run):
+    """Latest status event per variant; a variant with no event is open."""
+    state = {variant_id: dict(status='open') for variant_id in variants_by_id(run)}
+    for event in read_jsonl(run / 'variant-events.jsonl'):
+        if event['variant'] in state:
+            state[event['variant']] = event
+    return state
+
+
+def open_variants(run):
+    """Open variants, easiest first; ties keep the order in which they were recorded."""
+    state = variant_state(run)
+    pool = [v for v in variants_by_id(run).values() if state[v['id']]['status'] == 'open']
+    return sorted(pool, key=lambda v: v['difficulty'])
+
+
+def solved_variants(run):
+    """Solved variant ids, most recently solved first."""
+    state, latest = variant_state(run), {}
+    for index, event in enumerate(read_jsonl(run / 'variant-events.jsonl')):
+        latest[event['variant']] = index
+    solved = [v for v in state if state[v]['status'] == 'solved']
+    return sorted(solved, key=lambda v: -latest[v])
+
+
+def variant_proof(run, variant_id):
+    """The retained proof text of a solved variant, refused if its bytes changed."""
+    event = variant_state(run)[variant_id]
+    raw = (run / event['proof']).read_bytes()
+    if sha(raw) != event['proof_sha256']:
+        sys.exit(f'Proof of variant {variant_id} does not match its recorded hash; '
+                 'record the changed proof again with `variant solve`.')
+    return raw.decode('utf-8', errors='replace'), event
+
+
+def normal_variant(raw):
+    variant = {key: str(raw.get(key, '') or '') for key in VARIANT_TEXT}
+    variant['kind'] = raw.get('kind') if raw.get('kind') in VARIANT_KINDS else 'special-case'
+    variant['relation'] = raw.get('relation') if raw.get('relation') in VARIANT_RELATIONS else 'analogue'
+    variant['relation_status'] = 'proved' if raw.get('relation_status') == 'proved' else 'conjectured'
+    try:
+        variant['difficulty'] = min(5, max(1, int(raw.get('difficulty', 3))))
+    except (TypeError, ValueError):
+        variant['difficulty'] = 3
+    return variant
+
+
+def variant_line(variant, status=None):
+    relation = {'implies-target': 'implies the target', 'implied-by-target': 'is implied by the target',
+                'analogue': 'is an analogue of the target'}[variant['relation']]
+    return (f"{variant['id']}" + (f' [{status}]' if status else '') + f" ({variant['kind']}, difficulty "
+            f"{variant['difficulty']}/5; {relation}, relation {variant['relation_status']}): "
+            f"{variant['statement']}")
+
+
+class InlineBudget:
+    """Shared character allowance for inlined material: a text goes in whole or not at all."""
+
+    def __init__(self, limit):
+        self.room, self.omitted, self.words = max(0, limit), [], 0
+
+    def take(self, label, text):
+        if len(text) > self.room:
+            self.omitted.append(f'{label}: omitted whole ({len(text)} characters; {self.room} left '
+                                'of max_inline_chars)')
+            return False
+        self.room -= len(text)
+        self.words += len(text.split())
+        return True
+
+
+def ladder_settings(spec):
+    return spec.get('variant_ladder') or {}
+
+
+def slot_variant(run, slot):
+    """The variant a slot works on: its own, or the one its first card was written for."""
+    if slot.get('variant'):
+        return slot['variant']
+    known = cards_by_id(run)
+    for card_id in slot.get('cards') or []:
+        if known.get(card_id, {}).get('variant'):
+            return known[card_id]['variant']
+    return None
+
+
+def variant_assignment(run, variant_id):
+    variant, state = variants_by_id(run)[variant_id], variant_state(run)[variant_id]
+    return '\n'.join([
+        '## Assigned variant (work on this statement, not the full target)', '',
+        variant_line(variant, state['status']), '',
+        f"Why the relation holds: {variant['relation_argument'] or 'not stated'}",
+        'The target in the frontier supplies motivation and notation. Settle this variant: prove it, '
+        'refute it, or isolate its earliest gap. Keep its exact hypotheses.'])
+
+
+def solved_block(run, spec, slot, budget):
+    """Complete proofs of solved variants: each whole with its review scope, or omitted and said so."""
+    chosen = slot.get('solved_variants')
+    if chosen is None:
+        chosen = solved_variants(run)[:ladder_settings(spec).get('inline_solved', 2)]
+    if not chosen:
+        return ''
+    known = variants_by_id(run)
+    parts = ['## Solved variants of the target, with their complete proofs', '',
+             'These are neighbours of the target that have been settled. Study how the proofs work; '
+             'each carries its review scope, and none is a certified result unless its scope says so.']
+    for variant_id in chosen:
+        proof, event = variant_proof(run, variant_id)
+        check_hidden(spec, f'proof of variant {variant_id}', proof + known[variant_id]['statement'])
+        scope = event.get('review_scope') or DEFAULT_REVIEW_SCOPE
+        parts += ['', f'### {variant_line(known[variant_id], "solved")}', '', f'Review scope: {scope}.']
+        if budget.take(f'proof of variant {variant_id}', proof):
+            parts += ['', f'--- begin complete proof of {variant_id} ---', proof.strip(),
+                      f'--- end proof of {variant_id} ---']
+        else:
+            parts += ['', f'Proof omitted, not shortened: it has {len(proof)} characters and does not fit '
+                          'the remaining inline allowance. Only the statement above is available here.']
+    return '\n'.join(parts)
+
+
+def cmd_variant(args):
+    run, spec = open_run(args.run_dir)
+    known, state = variants_by_id(run), variant_state(run)
+    if args.action == 'list':
+        for variant in sorted(known.values(), key=lambda v: (v['difficulty'], v['id'])):
+            event = state[variant['id']]
+            print(clip(variant_line(variant, event['status']), 220))
+            if event['status'] == 'solved':
+                print(f"    proof {event['proof']} sha256 {event['proof_sha256'][:12]}… "
+                      f"review scope: {event.get('review_scope') or DEFAULT_REVIEW_SCOPE}")
+        print(f'{len(known)} variants: ' + (', '.join(f'{k}={v}' for k, v in sorted(
+            Counter(e['status'] for e in state.values()).items())) or 'none'))
+        return
+    if args.action == 'add':
+        number = 1 + sum(1 for variant_id in known if variant_id.startswith('conductor-v'))
+        variant = dict(id=f'conductor-v{number}', round=None, slot=None, backend='conductor',
+                       created_utc=utc(), **normal_variant(vars(args)))
+        if not variant['statement'].strip():
+            sys.exit('A variant needs an exact statement')
+        append(run / 'variants.jsonl', variant)
+        print(f"Added {variant_line(variant, 'open')}")
+        return
+    if args.variant not in known:
+        sys.exit(f'Unknown variant {args.variant}')
+    event = dict(variant=args.variant, status=None, reason=args.reason or '', by='conductor', utc=utc())
+    if args.action == 'mark':
+        event['status'] = args.status
+    else:  # solve: keep the complete proof as a hashed file beside the run's other evidence
+        source = Path(args.proof)
+        try:
+            raw = source.read_bytes()
+        except OSError as exc:
+            sys.exit(f'Proof file: {exc}')
+        if not raw.strip():
+            sys.exit('The proof file is empty; a solved variant keeps its complete proof')
+        if args.card and args.card not in cards_by_id(run):
+            sys.exit(f'Unknown card {args.card}')
+        digest = sha(raw)
+        folder = run / 'variants' / args.variant
+        folder.mkdir(parents=True, exist_ok=True)
+        kept = folder / f'proof-{digest[:12]}{source.suffix or ".md"}'
+        kept.write_bytes(raw)
+        event.update(status='solved', proof=str(kept.relative_to(run)), proof_sha256=digest,
+                     review_scope=args.review_scope or DEFAULT_REVIEW_SCOPE, card=args.card)
+    append(run / 'variant-events.jsonl', event)
+    print(f"Variant {args.variant}: {event['status']}"
+          + (f" (proof {event['proof']}, review scope: {event['review_scope']})"
+             if event['status'] == 'solved' else '')
+          + '. This is run state only; no catalog record or status was changed.')
+
+
 # init ----------------------------------------------------------------------
 
 def hub_brief(project, gap):
@@ -223,6 +407,28 @@ def plan_prospect(run, spec, count):
             for i, lens in enumerate(chosen, 1)]
 
 
+def assign_ladder(run, spec, slots, only=None, target_only=False):
+    """Aim prospect slots at the easiest open variants; slots left over attack the target."""
+    if target_only or (only is None and ladder_settings(spec).get('prefer_open', True) is False):
+        return slots
+    if only is not None:
+        if only not in variants_by_id(run):
+            sys.exit(f'Unknown variant {only}')
+        if variant_state(run)[only]['status'] != 'open':
+            sys.exit(f'Variant {only} is not open')
+        ladder = [only] * len(slots)
+    else:
+        ladder = [variant['id'] for variant in open_variants(run)]
+    for slot, variant_id in zip(slots, ladder):
+        slot['variant'] = variant_id
+    return slots
+
+
+def slot_label(slot):
+    label = slot.get('lens') or ','.join(slot.get('cards') or []) or slot['stage']
+    return label + (f" -> variant {slot['variant']}" if slot.get('variant') else '')
+
+
 def top_open_cards(run, count, stage):
     status = card_status(run)
     wanted = ('open',) if stage == 'assay' else ('survives', 'promoted')
@@ -241,11 +447,15 @@ def cmd_plan(args):
     path = round_dir(run, number) / 'slots.json'
     if path.exists() and not args.force:
         sys.exit(f'{path} exists; edit it or pass --force')
-    defaults = dict(prospect=6, assay=3, dig=1)
+    defaults = dict(prospect=6, assay=3, dig=1, variants=1)
     defaults.update(spec.get('default_slots') or {})
     args.n = args.n or defaults[args.stage]
     if args.stage == 'prospect':
-        slots = plan_prospect(run, spec, args.n)
+        slots = assign_ladder(run, spec, plan_prospect(run, spec, args.n), args.variant,
+                              args.target_only)
+    elif args.stage == 'variants':
+        slots = [dict(id=f's{i}', stage='variants', backend=args.backend or 'codex', files=[], note='')
+                 for i in range(1, args.n + 1)]
     else:
         known = cards_by_id(run)
         chosen = args.cards or top_open_cards(run, args.n * (args.per_slot if args.stage == 'assay' else 1),
@@ -269,8 +479,9 @@ def cmd_plan(args):
     dump(path, slots)
     print(f'Planned round {number} ({args.stage}) at {path}:')
     for slot in slots:
-        print(f"  {slot['id']}: {slot['backend']:6} {slot.get('lens') or ','.join(slot['cards'])}")
-    print('Edit slots.json if needed (lens, backend, files, note), then run it.')
+        print(f"  {slot['id']}: {slot['backend']:6} {slot_label(slot)}")
+    print('Edit slots.json if needed (lens, backend, files, note, variant, solved_variants), '
+          'then run it.')
 
 
 # prompts -------------------------------------------------------------------
@@ -293,7 +504,7 @@ def section(text, heading):
     raise ValueError(f'heading not found: {heading}')
 
 
-def context_block(spec, files):
+def context_block(spec, files, budget=None):
     if not files:
         return '', []
     limit, used, parts, notes = spec.get('max_inline_chars', 60000), 0, ['## Named context'], []
@@ -316,14 +527,28 @@ def context_block(spec, files):
         parts += ['', f'### {item}', '', text]
     if notes:
         parts += ['', 'Truncation: ' + '; '.join(notes)]
+    if budget is not None:
+        budget.room = max(0, budget.room - used)
     return '\n'.join(parts), notes
 
 
-def feed_forward(run, spec):
+def survivor_sketch(card, status, judges):
+    """A survivor's complete statement and sketch, labelled with what review it has had."""
+    scope = (f"Prospector lead marked `{status}` by {', '.join(judges) or 'the record'}; "
+             'not an independently reviewed proof')
+    return '\n'.join([f"### {card['id']}: {card['title']}", '', f'Review scope: {scope}.', '',
+                      f"Statement: {card['statement']}", '', f"Sketch: {card['sketch']}", '',
+                      f"Weakest step: {card['weakest_step']}",
+                      f"Earliest remaining gap: {card['gap_after'] or 'not stated'}"])
+
+
+def feed_forward(run, spec, budget=None):
     limits, status, cards = spec.get('feed_forward') or {}, card_status(run), cards_by_id(run).values()
-    reasons = {}
+    reasons, judges = {}, {}
     for event in read_jsonl(run / 'dispositions.jsonl'):
         reasons[event['card']] = event.get('reason', '')
+        if event['status'] in ('survives', 'promoted'):
+            judges.setdefault(event['card'], []).append(event['by'])
     alive = sorted((c for c in cards if status[c['id']] in ('survives', 'promoted')),
                    key=lambda c: -float(c.get('confidence') or 0))[:limits.get('survivors', 6)]
     dead = [c for c in cards if status[c['id']] == 'killed'][-limits.get('kills', 12):]
@@ -334,13 +559,26 @@ def feed_forward(run, spec):
     if alive:
         lines += ['', 'Surviving ideas:']
         lines += [f"- {c['id']} [{status[c['id']]}] {c['title']}: {clip(c['statement'], 400)} "
-                  f"Weakest step: {clip(c['weakest_step'], 200)}" for c in alive]
+                  f"Weakest step: {clip(c['weakest_step'], 200)}"
+                  + (f" (for variant {c['variant']})" if c.get('variant') else '') for c in alive]
     if dead:
         lines += ['', 'Killed ideas (one line each):']
         lines += [f"- {c['id']} {clip(c['title'], 120)}: {clip(reasons.get(c['id'], ''), 200)}" for c in dead]
     if pending:
         lines += ['', 'Already proposed, not yet tested (do not duplicate):']
         lines += [f"- {c['id']} {clip(c['title'], 160)}" for c in pending]
+    if alive and budget is not None:
+        # The one-line entries above are abridged; the full sketch goes in whole or not at all.
+        lines += ['', '## Surviving ideas in full', '',
+                  'Complete statements and sketches of the survivors listed above. They are leads '
+                  'with the review scope shown, to be built on or corrected.']
+        for card in alive:
+            text = survivor_sketch(card, status[card['id']], judges.get(card['id'], []))
+            if budget.take(f"sketch of survivor {card['id']}", text):
+                lines += ['', text]
+            else:
+                lines += ['', f"### {card['id']}: sketch omitted, not shortened ({len(text)} characters "
+                              'do not fit the remaining inline allowance).']
     return '\n'.join(lines)
 
 
@@ -349,7 +587,7 @@ def cards_block(run, ids):
     parts = []
     for card_id in ids:
         card = {k: v for k, v in known[card_id].items()
-                if k in CARD_TEXT or k in ('id', 'kind', 'confidence')}
+                if k in CARD_TEXT or k in ('id', 'kind', 'confidence') or (k == 'variant' and v)}
         parts.append(f'### {card_id}\n\n```json\n{json.dumps(card, indent=2, ensure_ascii=False)}\n```')
         history = [e for e in events if e['card'] == card_id]
         for event in history:
@@ -358,11 +596,25 @@ def cards_block(run, ids):
     return '\n\n'.join(parts)
 
 
+def schema_path(stage):
+    return TEMPLATES / ('variants.schema.json' if stage == 'variants' else 'card.schema.json')
+
+
 def output_contract(backend, stage, max_cards):
-    schema = (TEMPLATES / 'card.schema.json').read_text(encoding='utf-8')
+    schema = schema_path(stage).read_text(encoding='utf-8')
     where = ('Your final message must be exactly this JSON object.' if backend != 'claude' else
              'End your answer with this JSON object in a single ```json fenced block; '
              'prose before it is optional.')
+    if stage == 'variants':
+        return '\n'.join([
+            '## Output', '', where, f'`variants`: 1 to {max_cards} variants, easiest first.',
+            'Variant fields: title; kind (special-case, lower-dimension [dimension or rank], '
+            'stronger-hypothesis, weaker-conclusion, analogue); statement (exact, self-contained, with '
+            'every hypothesis); relation (implies-target, implied-by-target or analogue); '
+            'relation_status (proved only if relation_argument is a complete argument, otherwise '
+            'conjectured); relation_argument; difficulty (integer 1 easiest to 5, relative to the '
+            'target at 5); first_step (the first calculation or argument to try).',
+            '', 'Schema:', '', '```json', schema.strip(), '```'])
     need = {'prospect': f'`cards`: 1 to {max_cards} claim cards; `verdicts`: [].',
             'assay': '`verdicts`: one per card above; `cards`: salvaged variants worth pursuing, or [].',
             'dig': '`cards`: one `argument` card, plus optional sub-lemmas or a counterexample; '
@@ -413,18 +665,37 @@ def build_prompt(run, spec, number, slot):
     check_hidden(spec, 'FRONTIER.md', frontier)
     words = len(frontier.split())
     files = list(spec.get('context_files') or []) + list(slot.get('files') or [])
-    context, notes = context_block(spec, files)
+    budget = InlineBudget(spec.get('max_inline_chars', 60000))
+    context, notes = context_block(spec, files, budget)
     stage, backend = slot['stage'], slot['backend']
+    max_cards = spec.get('max_cards_per_slot', 3)
+    if stage == 'variants':
+        max_cards = ladder_settings(spec).get('max_per_slot', 6)
     values = dict(frontier=frontier.strip(), context=context, tool_rule=tool_rule(backend, work),
-                  output_contract=output_contract(backend, stage, spec.get('max_cards_per_slot', 3)),
-                  max_cards=str(spec.get('max_cards_per_slot', 3)))
-    if stage == 'prospect':
+                  output_contract=output_contract(backend, stage, max_cards),
+                  max_cards=str(max_cards))
+    # Context files come first in the allowance, then solved proofs, then survivor sketches.
+    assigned = slot_variant(run, slot)
+    ladder = []
+    if assigned:
+        check_hidden(spec, f'variant {assigned}', variants_by_id(run)[assigned]['statement'])
+        ladder.append(variant_assignment(run, assigned))
+    if stage != 'variants':
+        ladder.append(solved_block(run, spec, slot, budget))
+    values['ladder'] = '\n\n'.join(part for part in ladder if part)
+    if stage == 'variants':
+        state = variant_state(run)
+        listed = [variant_line(v, state[v['id']]['status']) for v in variants_by_id(run).values()]
+        values['known_variants'] = ('## Variants already recorded (do not repeat them)\n\n'
+                                    + '\n'.join(f'- {line}' for line in listed)) if listed else ''
+        template = 'variants.md'
+    elif stage == 'prospect':
         library, _ = lenses(spec)
         lens = library[slot['lens']]
         instruction = (lens.get('instruction_tool_free', lens['instruction'])
                        if backend == 'claude' else lens['instruction'])
         values.update(lens_name=lens['name'], lens_instruction=instruction,
-                      feed_forward='' if slot.get('blind') else feed_forward(run, spec))
+                      feed_forward='' if slot.get('blind') else feed_forward(run, spec, budget))
         template = 'explorer.md'
     else:
         values['cards'] = cards_block(run, slot['cards'])
@@ -450,7 +721,8 @@ def build_prompt(run, spec, number, slot):
                    + ', '.join(spec['hidden']) + '\n')
     if backend == 'claude':
         validate_tool_free_prompt(prompt, notes)
-    return prompt, dict(frontier_words=words, prompt_words=len(prompt.split()), truncation=notes)
+    return prompt, dict(frontier_words=words, prompt_words=len(prompt.split()), truncation=notes,
+                        inlined_words=budget.words, omitted=budget.omitted)
 
 
 # backends ------------------------------------------------------------------
@@ -659,7 +931,7 @@ def call_codex(spec, slot, prompt, sdir, work, *, config_path=None):
         return dict(status='failed', error='codex CLI not found'), ''
     command = [binary, 'exec', '--skip-git-repo-check', '--ephemeral', '--json',
                '-s', settings.get('sandbox') or 'workspace-write', '-C', str(work),
-               '--output-schema', str(TEMPLATES / 'card.schema.json'),
+               '--output-schema', str(schema_path(slot.get('stage'))),
                '-o', str(sdir / 'last-message.txt')]
     if settings.get('model'):
         command += ['-m', settings['model']]
@@ -727,7 +999,16 @@ def call_stub(spec, slot, prompt, sdir, work, *, config_path=None):
         return dict(title=title, kind=kind, statement=f'{title} holds.', role='closes the gap',
                     sketch='stub sketch', weakest_step='stub step', kill_test='stub test',
                     evidence='none', differs_from='none', confidence=0.5, cost='small', gap_after=gap)
-    if slot['stage'] == 'prospect':
+    if slot['stage'] == 'variants':
+        payload = dict(summary='stub', variants=[
+            dict(title=f'stub variant {name}', kind=kind, statement=f'Every {name} widget is blue.',
+                 relation=relation, relation_status='conjectured', relation_argument='stub relation',
+                 difficulty=difficulty, first_step='stub step')
+            for name, kind, relation, difficulty in (
+                ('rank-two', 'lower-dimension', 'implied-by-target', 2),
+                ('split', 'special-case', 'implied-by-target', 1),
+                ('tropical', 'analogue', 'analogue', 4))])
+    elif slot['stage'] == 'prospect':
         payload = dict(summary='stub', cards=[card(f"stub {slot['lens']}")], verdicts=[])
     elif slot['stage'] == 'assay':
         payload = dict(summary='stub', cards=[], verdicts=[
@@ -756,7 +1037,7 @@ def parse_payload(text):
             obj = json.loads(candidate)
         except (json.JSONDecodeError, ValueError):
             continue
-        if isinstance(obj, dict) and ('cards' in obj or 'verdicts' in obj):
+        if isinstance(obj, dict) and ('cards' in obj or 'verdicts' in obj or 'variants' in obj):
             return obj
     return None
 
@@ -793,10 +1074,17 @@ def validate_slots(run, spec, slots):
             sys.exit(f"{slot['id']}: backend {slot['backend']} not configured in run.json")
         if slot['stage'] == 'prospect' and slot.get('lens') not in library:
             sys.exit(f"{slot['id']}: unknown lens {slot.get('lens')}")
-        if slot['stage'] != 'prospect':
+        if slot['stage'] in ('assay', 'dig'):
             missing = [c for c in slot.get('cards') or [] if c not in known]
             if not slot.get('cards') or missing:
                 sys.exit(f"{slot['id']}: needs existing cards (missing: {missing})")
+        state = variant_state(run)
+        if slot.get('variant') and slot['variant'] not in state:
+            sys.exit(f"{slot['id']}: unknown variant {slot['variant']}")
+        unsolved = [v for v in slot.get('solved_variants') or []
+                    if state.get(v, {}).get('status') != 'solved']
+        if unsolved:
+            sys.exit(f"{slot['id']}: solved_variants must name solved variants (not: {unsolved})")
 
 
 def execute(run, spec, number, slot, prompt):
@@ -818,15 +1106,23 @@ def execute(run, spec, number, slot, prompt):
 
 def record(run, spec, number, slot, receipt, payload):
     call = f"r{number:02d}-{slot['id']}"
-    new_cards, verdicts = [], 0
+    new_cards, verdicts, new_variants = [], 0, []
     if payload:
         stamp = utc()
+        assigned = slot_variant(run, slot)
+        for k, raw in enumerate(payload.get('variants') or [] if slot['stage'] == 'variants' else [], 1):
+            if not isinstance(raw, dict) or not str(raw.get('statement') or '').strip():
+                continue
+            variant = dict(id=f'{call}-v{k}', round=number, slot=slot['id'], backend=slot['backend'],
+                           created_utc=stamp, **normal_variant(raw))
+            append(run / 'variants.jsonl', variant)
+            new_variants.append(variant['id'])
         for k, raw in enumerate(payload.get('cards') or [], 1):
             if not isinstance(raw, dict):
                 continue
             card = dict(id=f'{call}-c{k}', round=number, slot=slot['id'], stage=slot['stage'],
                         backend=slot['backend'], lens=slot.get('lens'), origin=slot.get('cards') or [],
-                        created_utc=stamp, **normal_card(raw))
+                        variant=assigned, created_utc=stamp, **normal_card(raw))
             append(run / 'cards.jsonl', card)
             new_cards.append(card['id'])
         known = cards_by_id(run)
@@ -847,8 +1143,9 @@ def record(run, spec, number, slot, receipt, payload):
         wall_seconds=receipt.get('wall_seconds'), model=receipt.get('actual_model') or receipt.get('model'),
         usage=receipt.get('usage'), cost_usd=receipt.get('cost_usd'),
         prompt_sha256=receipt.get('prompt_sha256'), response_sha256=receipt.get('response_sha256'),
-        cards_out=new_cards, verdicts_out=verdicts, budget=spec['budget']))
-    return call, new_cards, verdicts
+        cards_out=new_cards, verdicts_out=verdicts, variant=slot_variant(run, slot),
+        variants_out=new_variants, budget=spec['budget']))
+    return call, new_cards, verdicts, new_variants
 
 
 def cmd_run(args):
@@ -883,18 +1180,23 @@ def cmd_run(args):
         if info['frontier_words'] > FRONTIER_WORD_LIMIT and slot is todo[0]:
             print(f"warning: FRONTIER.md has {info['frontier_words']} words; keep it under "
                   f'{FRONTIER_WORD_LIMIT}', file=sys.stderr)
-        for note in info['truncation']:
+        for note in info['truncation'] + info['omitted']:
             print(f"warning: {slot['id']}: {note}", file=sys.stderr)
         target = spec.get('prompt_word_warning', 2500)
-        if slot['stage'] in ('prospect', 'dig') and info['prompt_words'] > target:
-            print(f"warning: {slot['id']}: discovery prompt has {info['prompt_words']} words; "
-                  f'prefer one question and selected sections (soft target {target}; no truncation)',
+        # Whole solved-variant proofs and survivor sketches are expected to be long; the soft
+        # target covers the rest of the prompt.
+        own_words = info['prompt_words'] - info['inlined_words']
+        if slot['stage'] in ('prospect', 'dig') and own_words > target:
+            print(f"warning: {slot['id']}: discovery prompt has {own_words} words"
+                  + (f" besides {info['inlined_words']} words of inlined proofs and sketches"
+                     if info['inlined_words'] else '')
+                  + f'; prefer one question and selected sections (soft target {target}; no truncation)',
                   file=sys.stderr)
     if args.dry_run:
         print(f'Dry run: wrote {len(todo)} prompts in round {number}; nothing launched or debited.')
         for slot in todo:
             print(f"  {slot['id']}: {slot['backend']:6} {slot['stage']:8} "
-                  f"{slot.get('lens') or ','.join(slot['cards'])} ({len(prompts[slot['id']])} chars; "
+                  f"{slot_label(slot)} ({len(prompts[slot['id']])} chars; "
                   f"effort={backend_settings(spec, slot).get('effort') or 'inherited'})")
         return
     print(f"Round {number}: launching {len(todo)} calls, concurrency {budget['concurrency']}.", flush=True)
@@ -906,9 +1208,10 @@ def cmd_run(args):
                 receipt, payload = future.result()
             except Exception as exc:  # retain the failure; other slots continue
                 receipt, payload = dict(status='failed', error=f'{type(exc).__name__}: {exc}'), None
-            call, new_cards, verdicts = record(run, spec, number, slot, receipt, payload)
+            call, new_cards, verdicts, new_variants = record(run, spec, number, slot, receipt, payload)
             print(f"  {call}: {receipt['status']:11} {slot['backend']:6} "
                   f"{receipt.get('wall_seconds', 0)}s cards={len(new_cards)} verdicts={verdicts}"
+                  + (f' variants={len(new_variants)}' if slot['stage'] == 'variants' else '')
                   + (f" ({receipt['error']})" if receipt.get('error') else ''), flush=True)
     used, claude_used, _ = budget_use(run)
     print(f"Budget used: {used}/{budget['total_calls']} calls, {claude_used}/{budget['claude_calls']} Claude.")
@@ -1045,6 +1348,12 @@ def cmd_status(args):
         if status[card['id']] in ('survives', 'promoted'):
             print(f"  {card['id']} [{status[card['id']]}] {clip(card['title'], 100)}"
                   + (f" | gap: {clip(card['gap_after'], 80)}" if card['kind'] == 'argument' else ''))
+    ladder = variant_state(run)
+    if ladder:
+        print('Variants: ' + ', '.join(f'{k}={v}' for k, v in sorted(
+            Counter(e['status'] for e in ladder.values()).items())))
+        for variant in open_variants(run)[:3]:
+            print(f"  next: {clip(variant_line(variant, 'open'), 160)}")
     words = len((run / 'FRONTIER.md').read_text(encoding='utf-8').split())
     print(f'FRONTIER.md: {words} words' + (' (over limit)' if words > FRONTIER_WORD_LIMIT else ''))
     if spec.get('outcome'):
@@ -1118,13 +1427,40 @@ def main(argv=None):
     p = sub.add_parser('plan', help='Write slots.json for the next round')
     p.add_argument('run_dir')
     p.add_argument('--stage', choices=STAGES, default='prospect')
-    p.add_argument('-n', type=int, help='Slots (new-run defaults: 2 prospect, 1 assay, 1 dig)')
+    p.add_argument('-n', type=int, help='Slots (new-run defaults: 2 prospect, 1 assay, 1 dig, 1 variants)')
     p.add_argument('--cards', nargs='+', help='Cards to assay or dig (default: best open/surviving)')
     p.add_argument('--per-slot', type=int, default=2, help='Cards per assay slot')
     p.add_argument('--backend', choices=BACKENDS, help='Override every slot backend')
     p.add_argument('--round', type=int)
     p.add_argument('--force', action='store_true')
+    p.add_argument('--variant', help='Aim every prospect slot at this open variant')
+    p.add_argument('--target-only', action='store_true',
+                   help='Prospect the target itself even when open variants exist')
     p.set_defaults(func=cmd_plan)
+    p = sub.add_parser('variant', help='List, add, mark or solve variants of the target (run state only)')
+    p.add_argument('run_dir')
+    actions = p.add_subparsers(dest='action', required=True)
+    actions.add_parser('list', help='Variants, easiest first, with status')
+    a = actions.add_parser('add', help='Record a variant chosen by the conductor')
+    a.add_argument('--title', required=True)
+    a.add_argument('--statement', required=True, help='Exact statement with every hypothesis')
+    a.add_argument('--kind', choices=VARIANT_KINDS, required=True)
+    a.add_argument('--relation', choices=VARIANT_RELATIONS, required=True)
+    a.add_argument('--relation-status', choices=('proved', 'conjectured'), default='conjectured')
+    a.add_argument('--relation-argument', default='')
+    a.add_argument('--difficulty', type=int, choices=range(1, 6), required=True)
+    a.add_argument('--first-step', default='')
+    a = actions.add_parser('mark', help='Set a variant open, refuted or parked')
+    a.add_argument('variant')
+    a.add_argument('--status', choices=[s for s in VARIANT_STATUSES if s != 'solved'], required=True)
+    a.add_argument('--reason', required=True)
+    a = actions.add_parser('solve', help='Mark a variant solved and keep its complete proof, hashed')
+    a.add_argument('variant')
+    a.add_argument('--proof', required=True, help='File holding the complete proof')
+    a.add_argument('--review-scope', help=f'Who checked what (default: "{DEFAULT_REVIEW_SCOPE}")')
+    a.add_argument('--card', help='Card the proof came from, as provenance')
+    a.add_argument('--reason', default='')
+    p.set_defaults(func=cmd_variant)
     p = sub.add_parser('run', help='Launch a planned round in parallel')
     p.add_argument('run_dir')
     p.add_argument('--round', type=int, help='Default: latest planned round')

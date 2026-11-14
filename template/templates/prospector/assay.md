@@ -25,6 +25,8 @@ directory or publish anything.
 
 {{frontier}}
 
+{{ladder}}
+
 ## Cards to assay
 
 {{cards}}

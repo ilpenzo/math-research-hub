@@ -145,7 +145,9 @@ computing lenses to Codex, which may run Macaulay2, Sage and Python in its own
 work directory. Edit `slots.json` (lens, backend, up to three named file
 sections, a note), then `run`. Explorers do not see each other. From the
 second round they see survivors, one-line kills and pending titles, except
-for blind slots such as the wild card. Each returns one claim card by default
+for blind slots such as the wild card. Survivors also arrive with their full
+statement and sketch, each whole or omitted with a note (see
+[Variant ladder](#variant-ladder)). Each returns one claim card by default
 (the run may explicitly allow more):
 statement, role in the gap, sketch, weakest step, fastest kill test,
 evidence, what is new, confidence and cost.
@@ -182,12 +184,58 @@ complete candidate, freeze it and follow PROOF_SWARM's dispatch step 5:
 a fresh checker that did not develop it, plus the cross-model check. Mark the
 card `promoted`. Only reviewed results enter canonical records.
 
+## Variant ladder
+
+A model cannot be retrained for one problem. What it can use is the local
+structure shown by solved neighbours of the target, with their complete
+proofs in the prompt. The ladder collects those neighbours and climbs them
+from the easiest.
+
+- **Ask for variants.** `plan RUN --stage variants` plans one explorer that
+  proposes variants of the current gap: a special case, lower dimension or
+  rank, a stronger hypothesis, a weaker conclusion, an analogue in another
+  setting. Each has an exact statement, its relation to the target (implies
+  it, is implied by it, or analogue; the relation itself proved or
+  conjectured) and a difficulty from 1 to 5. It is one ordinary call.
+  `variant RUN add` records a variant you choose yourself, for instance a
+  known case from the literature.
+- **Status.** A variant is `open`, `solved`, `refuted` or `parked`. This is
+  run state in `variants.jsonl` and `variant-events.jsonl`, not a catalog
+  status. `variant RUN list` shows the ladder, easiest first;
+  `variant RUN mark ID --status refuted --reason "..."` records a decision.
+- **Climb from the easiest.** `plan` aims each prospect slot at a different
+  open variant, easiest first; slots left over attack the target. Use
+  `--target-only` to attack the target anyway, `--variant ID` to aim every
+  slot at one variant, or set `variant_ladder.prefer_open` to false. The slot
+  states the variant as its assignment; its cards remember it, and their
+  assay and dig prompts show its statement.
+- **Keep the proof.** When a variant is settled and you have read the
+  argument, write the complete proof to a file and run
+  `variant RUN solve ID --proof FILE`. The tool copies it to
+  `variants/ID/proof-HASH.md` and records its SHA-256 and a review scope. The
+  default scope is "unreviewed lead"; pass `--review-scope` to say who
+  checked what. A solved variant is not a verified result. Only the
+  conductor marks one solved; the tool never does.
+- **Proofs in the prompt.** Every prospect, assay and dig prompt inlines the
+  complete proofs of solved variants: by default the two most recently
+  solved (`variant_ladder.inline_solved`), or the IDs in a slot's
+  `solved_variants` list (`[]` for none). Each proof carries its review
+  scope. The tool refuses a proof whose bytes no longer match the recorded
+  hash. Blind slots receive the proofs but still no earlier-round ideas.
+- **Whole or omitted.** Named context files, then solved proofs, then
+  survivor sketches share `max_inline_chars`. A proof or sketch that does not
+  fit is left out and the prompt says so; it is never clipped. `run` warns
+  about each omission, so check a dry run. The prompt-size warning counts the
+  prompt without these inlined texts, which are expected to be long.
+
 ## Records
 
 The tool keeps everything in the run directory: `run.json`, `FRONTIER.md`,
 each slot's prompt, raw output, response and receipt with SHA-256 hashes,
 `cards.jsonl`, `dispositions.jsonl` and `ledger.jsonl` (status, timing,
-model and usage when the CLI reports it). Do not copy these into the NOTE.
+model and usage when the CLI reports it). The ladder adds `variants.jsonl`,
+`variant-events.jsonl` and the hashed proofs under `variants/`. Do not copy
+these into the NOTE.
 
 While a model process runs, its slot's `active.json` records the child and
 supervisor PIDs, elapsed time, output byte counts, last-output age and current
@@ -251,7 +299,12 @@ instructed, not enforced.
 
 ```
 python3 tools/prospector.py init RUN --project P --gap K-ID --target "..." --authorization "..."
-python3 tools/prospector.py plan RUN [-n 6]
+python3 tools/prospector.py plan RUN [-n 6] [--target-only | --variant ID]
+python3 tools/prospector.py plan RUN --stage variants
+python3 tools/prospector.py variant RUN list
+python3 tools/prospector.py variant RUN add --title "..." --statement "..." --kind special-case --relation implied-by-target --difficulty 2
+python3 tools/prospector.py variant RUN mark ID --status refuted --reason "..."
+python3 tools/prospector.py variant RUN solve ID --proof FILE [--review-scope "..."]
 python3 tools/prospector.py run RUN [--dry-run]
 python3 tools/prospector.py cards RUN [--status open] [--show CARD]
 python3 tools/prospector.py plan RUN --stage assay [--cards CARD ...]
@@ -265,6 +318,6 @@ python3 tools/prospector.py doctor [--live]
 ```
 
 Templates: `templates/prospector/` holds the run defaults, the frontier card,
-the explorer, assay and dig prompts, the claim-card schema and the lens
-library. Tests: `tools/test_prospector.py` (offline stub backend and local
+the explorer, assay, dig and variants prompts, the claim-card and variants
+schemas and the lens library. Tests: `tools/test_prospector.py` (offline stub backend and local
 subprocess monitoring; no model calls).

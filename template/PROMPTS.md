@@ -89,6 +89,20 @@ and then:
 > with hub.py package, and record the result with evidence level
 > "computation-reproduced" and a scope of exactly what ran.
 
+## Proof search with Prospector
+
+**Start a search.**
+> Use Prospector on [statement or Gap ID] in project [project]. I authorize
+> one run with the default budget. Frame the frontier, show me a dry run of
+> the first round, and wait for my go-ahead before launching it.
+
+**Build a ladder of easier problems.**
+> In the Prospector run [run], plan a variants round for the current gap and
+> show me the proposed variants with their relation to the target and
+> difficulty. After I choose, work on the easiest open variants first. When
+> one is settled, save its complete proof with `variant solve` and tell me
+> its review scope.
+
 ## Finishing
 
 **Close out.**

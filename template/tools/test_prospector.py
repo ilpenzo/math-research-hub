@@ -22,7 +22,15 @@ def call(*argv):
     return out.getvalue()
 
 
-class ProspectorTests(unittest.TestCase):
+def call_err(*argv):
+    """Run a command and return what it wrote to stderr (warnings)."""
+    err = io.StringIO()
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+        pr.main(list(argv))
+    return err.getvalue()
+
+
+class RunCase(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
@@ -44,6 +52,17 @@ class ProspectorTests(unittest.TestCase):
         spec['budget'].update(budget)
         path.write_text(json.dumps(spec))
 
+    def edit_spec(self, **changes):
+        spec = pr.load(self.run / 'run.json')
+        spec.update(changes)
+        pr.dump(self.run / 'run.json', spec)
+        return spec
+
+    def prompt(self, number, slot='s1'):
+        return (self.run / 'rounds' / f'r{number:02d}' / slot / 'prompt.md').read_text()
+
+
+class ProspectorTests(RunCase):
     def test_init_writes_frontier_and_spec(self):
         spec = json.loads((self.run / 'run.json').read_text())
         self.assertEqual(spec['kind'], 'prospector-run')
@@ -420,6 +439,280 @@ class ProspectorTests(unittest.TestCase):
         with contextlib.chdir(self.tmp), patch.dict(pr.CALLERS, codex=doctor_backend, claude=doctor_backend):
             call('doctor', '--live', '--scratch', 'relative-scratch')
         self.assertEqual(observed, [(300, True, True), (300, True, True)])
+
+
+class VariantLadderTests(RunCase):
+    """Item 1: variants of the gap, solved proofs and survivor sketches inlined whole."""
+
+    def ladder(self):
+        call('plan', str(self.run), '--stage', 'variants', '--backend', 'stub')
+        call('run', str(self.run))
+        return {v['title'].split()[-1]: v['id'] for v in pr.read_jsonl(self.run / 'variants.jsonl')}
+
+    def solve(self, variant, text, *extra):
+        proof = self.tmp / f'{variant}.md'
+        proof.write_text(text)
+        return call('variant', str(self.run), 'solve', variant, '--proof', str(proof), *extra)
+
+    def test_variants_stage_records_exact_variants_and_debits_one_call(self):
+        ids = self.ladder()
+        variants = pr.read_jsonl(self.run / 'variants.jsonl')
+        self.assertEqual(len(variants), 3)
+        self.assertEqual({v['relation'] for v in variants}, {'implied-by-target', 'analogue'})
+        self.assertTrue(all(v['relation_status'] == 'conjectured' and 1 <= v['difficulty'] <= 5
+                            for v in variants))
+        self.assertEqual(pr.budget_use(self.run)[0], 1, 'a variants slot is one ordinary call')
+        entry = pr.read_jsonl(self.run / 'ledger.jsonl')[0]
+        self.assertEqual((entry['stage'], len(entry['variants_out'])), ('variants', 3))
+        prompt = self.prompt(1)
+        self.assertIn('special case', prompt)
+        self.assertIn('"relation_status"', prompt, 'the variants schema is the output contract')
+        self.assertNotIn('"verdicts"', prompt)
+        listing = call('variant', str(self.run), 'list')
+        self.assertLess(listing.index(ids['split']), listing.index(ids['rank-two']), 'easiest first')
+        self.assertIn('3 variants: open=3', listing)
+        self.assertIn('Variants: open=3', call('status', str(self.run)))
+        # A second variants slot is told what already exists.
+        call('plan', str(self.run), '--stage', 'variants', '--backend', 'stub')
+        call('run', str(self.run), '--dry-run')
+        self.assertIn('Variants already recorded', self.prompt(2))
+        self.assertIn(ids['split'], self.prompt(2))
+
+    def test_codex_receives_the_schema_of_its_stage(self):
+        spec = pr.load(self.run / 'run.json')
+        sdir = self.tmp / 'backend'; sdir.mkdir()
+
+        def fake_process(command, prompt, cwd, env, timeout, stdout, stderr, **kwargs):
+            stdout.write_text(''); stderr.write_text('')
+            return 0, 'completed', .1
+
+        with patch.object(pr.shutil, 'which', return_value=sys.executable), \
+                patch.object(pr, 'run_process', side_effect=fake_process):
+            for stage, name in (('variants', 'variants.schema.json'), ('prospect', 'card.schema.json'),
+                                ('dig', 'card.schema.json')):
+                receipt, _ = pr.call_codex(spec, dict(backend='codex', stage=stage), 'x', sdir, sdir)
+                schema = receipt['command'][receipt['command'].index('--output-schema') + 1]
+                self.assertEqual(Path(schema).name, name)
+        strict = pr.load(pr.TEMPLATES / 'variants.schema.json')
+        item = strict['properties']['variants']['items']
+        self.assertEqual(sorted(item['required']), sorted(item['properties']), 'strict: every field required')
+        self.assertFalse(item['additionalProperties'])
+
+    def test_plan_prefers_easiest_open_variants_before_the_target(self):
+        ids = self.ladder()
+        call('plan', str(self.run), '-n', '4', '--backend', 'stub')
+        self.assertEqual([s.get('variant') for s in self.slots(2)],
+                         [ids['split'], ids['rank-two'], ids['tropical'], None])
+        call('variant', str(self.run), 'mark', ids['split'], '--status', 'refuted', '--reason', 'red widget')
+        call('plan', str(self.run), '-n', '2', '--backend', 'stub', '--force', '--round', '2')
+        self.assertEqual([s.get('variant') for s in self.slots(2)], [ids['rank-two'], ids['tropical']])
+        call('plan', str(self.run), '-n', '2', '--backend', 'stub', '--force', '--round', '2',
+             '--target-only')
+        self.assertEqual([s.get('variant') for s in self.slots(2)], [None, None])
+        call('plan', str(self.run), '-n', '2', '--backend', 'stub', '--force', '--round', '2',
+             '--variant', ids['tropical'])
+        self.assertEqual([s.get('variant') for s in self.slots(2)], [ids['tropical']] * 2)
+        with self.assertRaisesRegex(SystemExit, 'not open'):
+            call('plan', str(self.run), '--force', '--round', '2', '--variant', ids['split'])
+        self.edit_spec(variant_ladder={'prefer_open': False})
+        call('plan', str(self.run), '-n', '2', '--backend', 'stub', '--force', '--round', '2')
+        self.assertEqual([s.get('variant') for s in self.slots(2)], [None, None])
+
+    def test_cards_inherit_the_variant_and_later_stages_show_its_statement(self):
+        ids = self.ladder()
+        call('plan', str(self.run), '-n', '1', '--backend', 'stub')
+        call('run', str(self.run))
+        self.assertIn('## Assigned variant', self.prompt(2))
+        self.assertIn('Every split widget is blue.', self.prompt(2))
+        card = pr.read_jsonl(self.run / 'cards.jsonl')[0]
+        self.assertEqual(card['variant'], ids['split'])
+        call('plan', str(self.run), '--stage', 'dig', '--backend', 'stub', '--cards', card['id'])
+        call('run', str(self.run))
+        self.assertIn('Every split widget is blue.', self.prompt(3))
+        argument = pr.read_jsonl(self.run / 'cards.jsonl')[-1]
+        self.assertEqual(argument['variant'], ids['split'], 'the argument is for the variant, not the target')
+
+    def test_solved_variant_keeps_hashed_proof_and_review_scope(self):
+        ids = self.ladder()
+        text = 'Lemma. Every split widget is blue.\n\nProof. Split widgets are painted blue. QED\n'
+        out = self.solve(ids['split'], text)
+        self.assertIn('review scope: unreviewed lead', out)
+        self.assertIn('no catalog record or status was changed', out)
+        event = pr.variant_state(self.run)[ids['split']]
+        kept = self.run / event['proof']
+        self.assertEqual(kept.read_text(), text)
+        self.assertEqual(pr.sha(kept.read_bytes()), event['proof_sha256'])
+        self.assertEqual(event['review_scope'], 'unreviewed lead')
+        self.assertIn('proof variants/', call('variant', str(self.run), 'list'))
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+            call('variant', str(self.run), 'mark', ids['rank-two'], '--status', 'solved', '--reason', 'x')
+        empty = self.tmp / 'empty.md'; empty.write_text(' ')
+        with self.assertRaisesRegex(SystemExit, 'complete proof'):
+            call('variant', str(self.run), 'solve', ids['rank-two'], '--proof', str(empty))
+        self.solve(ids['rank-two'], 'Proof by rank.', '--review-scope',
+                   'fresh proof-checker, frozen text, whole argument')
+        call('plan', str(self.run), '-n', '2', '--backend', 'stub')
+        self.assertEqual([s.get('variant') for s in self.slots(2)], [ids['tropical'], None],
+                         'solved variants are no longer planned')
+        call('run', str(self.run), '--dry-run')
+        prompt = self.prompt(2)
+        self.assertIn(text.strip(), prompt)
+        self.assertIn('Review scope: unreviewed lead.', prompt)
+        self.assertIn('Review scope: fresh proof-checker, frozen text, whole argument.', prompt)
+        kept.write_text(text + 'An unrecorded edit.')
+        with self.assertRaisesRegex(SystemExit, 'recorded hash'):
+            call('run', str(self.run), '--dry-run')
+
+    def test_default_inlines_the_two_most_recently_solved_and_slots_can_choose(self):
+        ids = self.ladder()
+        for name in ('split', 'rank-two', 'tropical'):
+            self.solve(ids[name], f'PROOF-OF-{name.upper()} complete.')
+        call('plan', str(self.run), '-n', '1', '--backend', 'stub')
+        call('run', str(self.run), '--dry-run')
+        prompt = self.prompt(2)
+        self.assertNotIn('PROOF-OF-SPLIT', prompt)
+        self.assertIn('PROOF-OF-RANK-TWO', prompt)
+        self.assertIn('PROOF-OF-TROPICAL', prompt)
+        slots = self.slots(2)
+        slots[0]['solved_variants'] = [ids['split']]
+        self.write_slots(2, slots)
+        call('run', str(self.run), '--dry-run')
+        self.assertIn('PROOF-OF-SPLIT', self.prompt(2))
+        self.assertNotIn('PROOF-OF-TROPICAL', self.prompt(2))
+        slots[0]['solved_variants'] = []
+        self.write_slots(2, slots)
+        call('run', str(self.run), '--dry-run')
+        self.assertNotIn('PROOF-OF-', self.prompt(2))
+        slots[0]['solved_variants'] = ['no-such-variant']
+        self.write_slots(2, slots)
+        with self.assertRaisesRegex(SystemExit, 'must name solved variants'):
+            call('run', str(self.run), '--dry-run')
+
+    def test_proof_goes_in_whole_or_is_omitted_and_said_so(self):
+        ids = self.ladder()
+        proof = 'HEAD-MARK ' + 'step ' * 400 + 'TAIL-MARK'
+        self.solve(ids['split'], proof)
+        spec = self.edit_spec(max_inline_chars=len(proof) - 1)
+        slot = dict(id='s1', stage='prospect', backend='claude', lens='weakest-sufficient')
+        prompt, info = pr.build_prompt(self.run, spec, 2, slot)
+        self.assertNotIn('HEAD-MARK', prompt, 'never a clipped proof')
+        self.assertNotIn('TAIL-MARK', prompt)
+        self.assertIn('Proof omitted, not shortened', prompt)
+        self.assertIn('Every split widget is blue.', prompt, 'the solved statement is still given')
+        self.assertEqual(len(info['omitted']), 1)
+        self.assertEqual(info['truncation'], [], 'an omitted proof is not a truncated tool-free packet')
+        prompt, info = pr.build_prompt(self.run, dict(spec, max_inline_chars=len(proof)), 2, slot)
+        self.assertIn('HEAD-MARK', prompt)
+        self.assertIn('TAIL-MARK', prompt)
+        self.assertEqual(info['omitted'], [])
+        # Named context is counted first, so a large context file leaves no room for the proof.
+        context = self.tmp / 'context.txt'; context.write_text('c' * 300)
+        prompt, info = pr.build_prompt(self.run, dict(spec, max_inline_chars=len(proof) + 200), 2,
+                                       dict(slot, files=[str(context)]))
+        self.assertNotIn('HEAD-MARK', prompt)
+        self.assertEqual(len(info['omitted']), 1)
+
+    def test_size_warning_expects_inlined_proofs(self):
+        ids = self.ladder()
+        self.solve(ids['split'], 'word ' * 3000)
+        call('plan', str(self.run), '-n', '1', '--backend', 'stub')
+        spec = pr.load(self.run / 'run.json')
+        _, info = pr.build_prompt(self.run, spec, 2, self.slots(2)[0])
+        self.assertGreaterEqual(info['inlined_words'], 3000)
+        self.assertGreater(info['prompt_words'], spec['prompt_word_warning'])
+        self.assertNotIn('discovery prompt has', call_err('run', str(self.run), '--dry-run'))
+        self.edit_spec(prompt_word_warning=100)
+        warning = call_err('run', str(self.run), '--dry-run')
+        self.assertIn('besides', warning)
+        self.assertIn('words of inlined proofs and sketches', warning)
+        self.edit_spec(prompt_word_warning=2500, max_inline_chars=50)
+        self.assertIn('omitted whole', call_err('run', str(self.run), '--dry-run'))
+
+    def test_hidden_material_in_a_proof_is_refused(self):
+        ids = self.ladder()
+        self.solve(ids['split'], 'This follows from SECRET-R001.')
+        self.edit_spec(hidden=['SECRET-R001'])
+        call('plan', str(self.run), '-n', '1', '--backend', 'stub')
+        with self.assertRaisesRegex(SystemExit, 'Hidden item'):
+            call('run', str(self.run), '--dry-run')
+
+    def survivor(self, statement, sketch):
+        call('plan', str(self.run), '-n', '1', '--backend', 'stub')
+        number = pr.round_numbers(self.run)[-1]
+        slots = self.slots(number)
+        slots[0]['stub_text'] = json.dumps(dict(summary='s', verdicts=[], cards=[dict(
+            title='Long idea', kind='lemma', statement=statement, role='r', sketch=sketch,
+            weakest_step='w', kill_test='k', evidence='none', differs_from='none', confidence=.4,
+            cost='small', gap_after='the gluing step')]))
+        self.write_slots(number, slots)
+        call('run', str(self.run))
+        card = pr.read_jsonl(self.run / 'cards.jsonl')[-1]['id']
+        call('plan', str(self.run), '--stage', 'assay', '--backend', 'stub', '--cards', card)
+        call('run', str(self.run))
+        return card
+
+    def test_feed_forward_passes_the_survivors_full_sketch(self):
+        statement = 'STATEMENT-HEAD ' + 'hypothesis ' * 60 + 'STATEMENT-TAIL'
+        sketch = 'SKETCH-HEAD ' + 'derive ' * 300 + 'SKETCH-TAIL'
+        card = self.survivor(statement, sketch)
+        spec = pr.load(self.run / 'run.json')
+        slot = dict(id='s1', stage='prospect', backend='codex', lens='monovariant')
+        prompt, info = pr.build_prompt(self.run, spec, 3, slot)
+        self.assertNotIn('STATEMENT-TAIL', prompt.split('## Surviving ideas in full')[0],
+                         'the one-line entry stays abridged')
+        full = prompt.split('## Surviving ideas in full')[1]
+        self.assertIn(statement, full)
+        self.assertIn(sketch, full)
+        self.assertIn('the gluing step', full)
+        self.assertIn(f'Prospector lead marked `survives` by r02-s1', full)
+        self.assertIn('not an independently reviewed proof', full)
+        self.assertGreaterEqual(info['inlined_words'], 360)
+        prompt, info = pr.build_prompt(self.run, dict(spec, max_inline_chars=500), 3, slot)
+        self.assertNotIn('SKETCH-HEAD', prompt)
+        self.assertNotIn('SKETCH-TAIL', prompt)
+        self.assertIn('sketch omitted, not shortened', prompt)
+        self.assertIn(card, prompt, 'the abridged line remains')
+        self.assertEqual(len(info['omitted']), 1)
+        blind, _ = pr.build_prompt(self.run, spec, 3, dict(slot, blind=True))
+        self.assertNotIn('SKETCH-HEAD', blind, 'blind slots still see no earlier rounds')
+
+    def test_runs_without_ladder_settings_or_variants_are_unchanged(self):
+        spec = pr.load(self.run / 'run.json')
+        spec.pop('variant_ladder')
+        pr.dump(self.run / 'run.json', spec)
+        call('plan', str(self.run), '-n', '2', '--backend', 'stub')
+        self.assertTrue(all('variant' not in s for s in self.slots(1)))
+        call('run', str(self.run))
+        prompt = self.prompt(1)
+        self.assertNotIn('Assigned variant', prompt)
+        self.assertNotIn('Solved variants', prompt)
+        self.assertNotIn('{{', prompt, 'no unfilled placeholder')
+        self.assertFalse((self.run / 'variants.jsonl').exists())
+        self.assertNotIn('Variants:', call('status', str(self.run)))
+
+    def test_conductor_can_add_a_variant_with_an_outside_proof(self):
+        out = call('variant', str(self.run), 'add', '--title', 'Classical case', '--statement',
+                   'Every classical widget is blue.', '--kind', 'analogue', '--relation', 'analogue',
+                   '--difficulty', '1')
+        self.assertIn('conductor-v1', out)
+        self.solve('conductor-v1', 'Known proof, quoted with its locator.', '--review-scope',
+                   'published; source check pending')
+        call('plan', str(self.run), '-n', '1', '--backend', 'stub')
+        call('run', str(self.run), '--dry-run')
+        self.assertIn('Review scope: published; source check pending.', self.prompt(1))
+        with self.assertRaisesRegex(SystemExit, 'Unknown variant'):
+            call('variant', str(self.run), 'mark', 'nope', '--status', 'parked', '--reason', 'x')
+
+    def test_new_prompts_are_recognized_as_internal_workers_by_mathdesk(self):
+        harness = pr.HUB / 'harness' / 'core'
+        if not (harness / 'session_filter.py').exists():
+            self.skipTest('MathDesk harness is not installed beside the tools')
+        sys.path.insert(0, str(harness))
+        self.addCleanup(sys.path.remove, str(harness))
+        import session_filter
+        call('plan', str(self.run), '--stage', 'variants', '--backend', 'stub')
+        call('run', str(self.run))
+        self.assertTrue(session_filter._worker_prompt(self.prompt(1)))
 
 
 if __name__ == '__main__':

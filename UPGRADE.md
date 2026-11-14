@@ -1,5 +1,20 @@
 # Updating an existing hub
 
+## Prospector search update
+
+Copy `template/tools/prospector.py`, `template/tools/test_prospector.py`,
+`template/PROSPECTOR.md` and the complete `template/templates/prospector/`
+directory together into an existing version 2 hub; the tool and its templates
+must match. Existing run directories and `run.json` files keep working
+unchanged: every new setting has a built-in default, and behaviour that
+changes selection or permissions is off unless a run file asks for it.
+
+- Variant ladder. New files `variants.md` and `variants.schema.json`; new
+  run settings `variant_ladder` (`prefer_open`, `inline_solved`,
+  `max_per_slot`) and `default_slots.variants`. A run with no variants plans
+  and prompts exactly as before. Prompts now also carry survivors' full
+  sketches, counted against `max_inline_chars` after named context files.
+
 ## Prospector discovery update
 
 This update adds `template/PROSPECTOR.md`, `template/tools/prospector.py`, its

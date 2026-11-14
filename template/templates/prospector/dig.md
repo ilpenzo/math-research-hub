@@ -24,6 +24,8 @@ working directory or publish anything.
 
 {{frontier}}
 
+{{ladder}}
+
 ## Card to develop, with recorded assessment history
 
 {{cards}}

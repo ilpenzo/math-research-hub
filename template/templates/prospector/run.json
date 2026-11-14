@@ -27,13 +27,14 @@
       "effort_by_stage": {"prospect": "high", "assay": "high", "dig": "xhigh"}
     }
   },
-  "default_slots": {"prospect": 2, "assay": 1, "dig": 1},
+  "default_slots": {"prospect": 2, "assay": 1, "dig": 1, "variants": 1},
   "max_cards_per_slot": 1,
   "prompt_word_warning": 2500,
   "max_inline_chars": 60000,
   "context_files": [],
   "hidden": [],
   "feed_forward": {"survivors": 2, "kills": 4, "open": 3},
+  "variant_ladder": {"prefer_open": true, "inline_solved": 2, "max_per_slot": 6},
   "lenses_extra": null,
   "budget_changes": [],
   "outcome": null
