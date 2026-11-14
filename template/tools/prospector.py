@@ -37,6 +37,11 @@ VARIANT_KINDS = ('special-case', 'lower-dimension', 'stronger-hypothesis', 'weak
 VARIANT_RELATIONS = ('implies-target', 'implied-by-target', 'analogue')
 VARIANT_TEXT = ('title', 'statement', 'relation_argument', 'first_step')
 DEFAULT_REVIEW_SCOPE = 'unreviewed lead'
+DEPTHS = ('standard', 'deep')
+# Deep Claude digs may be given these built-in tools and no others: none of them reaches the network.
+DEEP_CLAUDE_TOOLS = ('Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash')
+DEEP_CLAUDE_TURNS = 60
+DEEP_FILES = ('SCRATCH.md', 'DERIVATION.md')
 FRONTIER_WORD_LIMIT = 1200
 HEARTBEAT_SECONDS = 30
 MONITOR_SECONDS = 1
@@ -426,7 +431,8 @@ def assign_ladder(run, spec, slots, only=None, target_only=False):
 
 def slot_label(slot):
     label = slot.get('lens') or ','.join(slot.get('cards') or []) or slot['stage']
-    return label + (f" -> variant {slot['variant']}" if slot.get('variant') else '')
+    return (label + (f" -> variant {slot['variant']}" if slot.get('variant') else '')
+            + (' [deep]' if slot.get('depth') == 'deep' else ''))
 
 
 def top_open_cards(run, count, stage):
@@ -447,6 +453,8 @@ def cmd_plan(args):
     path = round_dir(run, number) / 'slots.json'
     if path.exists() and not args.force:
         sys.exit(f'{path} exists; edit it or pass --force')
+    if args.depth == 'deep' and args.stage != 'dig':
+        sys.exit('--depth deep applies to the dig stage only')
     defaults = dict(prospect=6, assay=3, dig=1, variants=1)
     defaults.update(spec.get('default_slots') or {})
     args.n = args.n or defaults[args.stage]
@@ -472,6 +480,8 @@ def cmd_plan(args):
             default = 'codex' if args.stage == 'assay' else other_backend(known[group[0]]['backend'])
             slots.append(dict(id=f's{i}', stage=args.stage, cards=group,
                               backend=args.backend or default, files=[], note=''))
+            if args.depth == 'deep':
+                slots[-1]['depth'] = 'deep'
     if args.backend and args.stage == 'prospect':
         for slot in slots:
             slot['backend'] = args.backend
@@ -629,7 +639,32 @@ def output_contract(backend, stage, max_cards):
         '', 'Schema:', '', '```json', schema.strip(), '```'])
 
 
-def tool_rule(backend, work):
+def deep_claude_tools(spec, slot):
+    """Tool names for a deep Claude dig, or () for the tool-free default.
+
+    Tools need both the slot's own `depth: deep` and the run's explicit `deep_dig.claude_tools`.
+    """
+    settings = spec.get('deep_dig') or {}
+    if not (slot.get('backend') == 'claude' and slot.get('stage') == 'dig'
+            and slot.get('depth') == 'deep' and settings.get('claude_tools') is True):
+        return ()
+    names = settings.get('claude_tool_names') or ','.join(DEEP_CLAUDE_TOOLS)
+    return tuple(name.strip() for name in str(names).split(',') if name.strip())
+
+
+def deep_claude_turns(spec):
+    return (spec.get('deep_dig') or {}).get('claude_max_turns', DEEP_CLAUDE_TURNS)
+
+
+def tool_rule(backend, work, tools=()):
+    if backend == 'claude' and tools:
+        return (f"You have these tools in this slot: {', '.join(tools)}. Use them only inside your "
+                f'working directory {work}: write scripts and outputs there and run computations '
+                'there (Macaulay2 `M2`, Sage or Python, where installed). Do not read or write '
+                'anything outside that directory, use the network, install software or change '
+                'settings. The mathematical inputs are the text supplied here: record IDs and paths '
+                'are provenance, not readable inputs. If a necessary statement or hypothesis is '
+                'missing, identify it precisely in your return.')
     if backend == 'claude':
         return ('You have no tools or filesystem access in this slot. Use only the text supplied; '
                 'record IDs and paths are provenance, not readable inputs. If a necessary statement '
@@ -671,7 +706,9 @@ def build_prompt(run, spec, number, slot):
     max_cards = spec.get('max_cards_per_slot', 3)
     if stage == 'variants':
         max_cards = ladder_settings(spec).get('max_per_slot', 6)
-    values = dict(frontier=frontier.strip(), context=context, tool_rule=tool_rule(backend, work),
+    tools = deep_claude_tools(spec, slot)
+    deep = stage == 'dig' and slot.get('depth') == 'deep'
+    values = dict(frontier=frontier.strip(), context=context, tool_rule=tool_rule(backend, work, tools),
                   output_contract=output_contract(backend, stage, max_cards),
                   max_cards=str(max_cards))
     # Context files come first in the allowance, then solved proofs, then survivor sketches.
@@ -699,9 +736,27 @@ def build_prompt(run, spec, number, slot):
         template = 'explorer.md'
     else:
         values['cards'] = cards_block(run, slot['cards'])
-        template = 'assay.md' if stage == 'assay' else 'dig.md'
+        template = 'assay.md' if stage == 'assay' else 'dig-deep.md' if deep else 'dig.md'
+    if deep and (backend != 'claude' or tools):
+        values.update(
+            scratch_rule=(f'Keep a running `SCRATCH.md` in {work}. Append to it as you go: what you '
+                          'tried, each computation with its command and outcome, dead ends, and the '
+                          'current best statement. It is your memory across a long session and the '
+                          'conductor reads it afterwards. It needs no polish.'),
+            derivation_rule=('Write the full derivation to `DERIVATION.md` in the same directory: '
+                             'every step, with the hypotheses it uses. Put a faithful step-by-step '
+                             "summary in the card's `sketch` and name both files in `evidence`."))
+    elif deep:
+        values.update(
+            scratch_rule=('You have no filesystem in this slot, so keep the running scratch in your '
+                          'answer: before the final derivation, write your working notes in order '
+                          '(what you tried, dead ends, the current best statement). You cannot '
+                          'compute here; mark each step that a small computation should test.'),
+            derivation_rule=('Write the full derivation in your answer, before the final JSON block: '
+                             'every step, with the hypotheses it uses. Put a faithful step-by-step '
+                             "summary in the card's `sketch`."))
     prompt = fill((TEMPLATES / template).read_text(encoding='utf-8'), values)
-    if stage in ('prospect', 'dig'):
+    if stage in ('prospect', 'dig') and not deep:
         if backend == 'claude':
             early = ('You have no filesystem tools. Make your final structured return the first '
                      'useful mathematical result; do not wait to build a full mechanism. '
@@ -958,13 +1013,30 @@ def call_claude(spec, slot, prompt, sdir, work, *, config_path=None):
     binary = shutil.which('claude') or str(Path.home() / '.local' / 'bin' / 'claude')
     if not Path(binary).exists():
         return dict(status='failed', error='claude CLI not found'), ''
-    command = [binary, '--print', '--tools', '', '--strict-mcp-config', '--disable-slash-commands',
-               '--no-session-persistence', '--safe-mode', '--verbose', '--output-format', 'stream-json',
-               '--max-turns', '1']
+    tools = deep_claude_tools(spec, dict(slot, backend='claude'))
+    if tools:
+        # Opt-in deep dig. Every flag is from `claude --help`; none bypasses permissions.
+        # --restricted confines the file tools to the working directory (the process cwd) and
+        # ignores user and project settings; the sandbox settings make the CLI run every shell
+        # command inside its OS sandbox or not at all; with nobody answering permission prompts,
+        # anything else that would ask is denied.
+        sandbox = dict(sandbox=dict(enabled=True, failIfUnavailable=True,
+                                    autoAllowBashIfSandboxed=True, allowUnsandboxedCommands=False))
+        command = [binary, '--print', '--restricted', '--tools', ','.join(tools),
+                   '--permission-mode', 'acceptEdits', '--permission-prompts', 'none',
+                   '--settings', json.dumps(sandbox), '--strict-mcp-config',
+                   '--disable-slash-commands', '--no-session-persistence', '--safe-mode', '--verbose',
+                   '--output-format', 'stream-json', '--max-turns', str(deep_claude_turns(spec))]
+    else:
+        command = [binary, '--print', '--tools', '', '--strict-mcp-config', '--disable-slash-commands',
+                   '--no-session-persistence', '--safe-mode', '--verbose', '--output-format',
+                   'stream-json', '--max-turns', '1']
     if settings.get('model'):
         command += ['--model', settings['model']]
     if settings.get('effort'):
         command += ['--effort', settings['effort']]
+    if any('dangerously' in part or part == 'bypassPermissions' for part in command):
+        return dict(status='failed', error='refusing a Claude command with a permission-bypass flag'), ''
     code, status, wall = run_process(command, prompt, work, dict(os.environ, MATHDESK_SKIP='1'),
                                      spec['budget'].get('timeout_seconds'),
                                      sdir / 'claude-stream.jsonl', sdir / 'stderr.txt',
@@ -972,6 +1044,8 @@ def call_claude(spec, slot, prompt, sdir, work, *, config_path=None):
     texts, receipt = [], dict(status=status, exit_code=code, wall_seconds=round(wall, 1),
                               command=command[1:], model=settings.get('model'),
                               effort=settings.get('effort'))
+    if tools:
+        receipt['tools'] = list(tools)
     result = None
     for event in jsonl_events(sdir / 'claude-stream.jsonl'):
         if event.get('type') == 'system' and event.get('subtype') == 'init':
@@ -983,6 +1057,11 @@ def call_claude(spec, slot, prompt, sdir, work, *, config_path=None):
             result = event
     if result:
         receipt.update(usage=result.get('usage'), cost_usd=result.get('total_cost_usd'))
+        if tools:
+            # Denials show whether the sandbox let the shell run; inspect them after a first use.
+            denials = result.get('permission_denials')
+            receipt.update(turns=result.get('num_turns'),
+                           permission_denials=len(denials) if isinstance(denials, list) else None)
         if result.get('is_error'):
             receipt.update(status='failed', error=clip(result.get('result') or '', 300))
     text = (result or {}).get('result') or '\n\n'.join(texts)
@@ -1078,6 +1157,18 @@ def validate_slots(run, spec, slots):
             missing = [c for c in slot.get('cards') or [] if c not in known]
             if not slot.get('cards') or missing:
                 sys.exit(f"{slot['id']}: needs existing cards (missing: {missing})")
+        if slot.get('depth', 'standard') not in DEPTHS:
+            sys.exit(f"{slot['id']}: depth must be one of {DEPTHS}")
+        if slot.get('depth') == 'deep' and slot['stage'] != 'dig':
+            sys.exit(f"{slot['id']}: depth deep applies to the dig stage only")
+        extra = [name for name in deep_claude_tools(spec, slot) if name not in DEEP_CLAUDE_TOOLS]
+        if extra:
+            sys.exit(f"{slot['id']}: deep_dig.claude_tool_names may only name {DEEP_CLAUDE_TOOLS} "
+                     f'(not: {extra})')
+        turns = deep_claude_turns(spec)
+        if deep_claude_tools(spec, slot) and (isinstance(turns, bool) or not isinstance(turns, int)
+                                              or turns < 1):
+            sys.exit(f"{slot['id']}: deep_dig.claude_max_turns must be a positive integer")
         state = variant_state(run)
         if slot.get('variant') and slot['variant'] not in state:
             sys.exit(f"{slot['id']}: unknown variant {slot['variant']}")
@@ -1100,6 +1191,14 @@ def execute(run, spec, number, slot, prompt):
         receipt['status'] = 'ok' if payload is not None else 'parse-error'
     receipt.update(started_utc=started, ended_utc=utc(), prompt_sha256=sha(prompt),
                    response_sha256=sha(text))
+    if slot.get('depth') == 'deep':
+        kept = []
+        for name in DEEP_FILES:
+            path = work / name
+            if path.is_file() and not path.is_symlink():
+                raw = path.read_bytes()
+                kept.append(dict(path=str(path.relative_to(run)), bytes=len(raw), sha256=sha(raw)))
+        receipt['deep_files'] = kept
     dump(sdir / 'receipt.json', receipt)
     return receipt, payload
 
@@ -1197,7 +1296,9 @@ def cmd_run(args):
         for slot in todo:
             print(f"  {slot['id']}: {slot['backend']:6} {slot['stage']:8} "
                   f"{slot_label(slot)} ({len(prompts[slot['id']])} chars; "
-                  f"effort={backend_settings(spec, slot).get('effort') or 'inherited'})")
+                  f"effort={backend_settings(spec, slot).get('effort') or 'inherited'}"
+                  + (f"; tools={','.join(deep_claude_tools(spec, slot))}, up to "
+                     f'{deep_claude_turns(spec)} turns' if deep_claude_tools(spec, slot) else '') + ')')
         return
     print(f"Round {number}: launching {len(todo)} calls, concurrency {budget['concurrency']}.", flush=True)
     with ThreadPoolExecutor(max_workers=max(1, budget['concurrency'])) as pool:
@@ -1433,6 +1534,7 @@ def main(argv=None):
     p.add_argument('--backend', choices=BACKENDS, help='Override every slot backend')
     p.add_argument('--round', type=int)
     p.add_argument('--force', action='store_true')
+    p.add_argument('--depth', choices=DEPTHS, help='dig only: deep = sustained work, no time or word target')
     p.add_argument('--variant', help='Aim every prospect slot at this open variant')
     p.add_argument('--target-only', action='store_true',
                    help='Prospect the target itself even when open variants exist')

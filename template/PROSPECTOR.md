@@ -165,7 +165,8 @@ did not propose it. Explicitly chosen unassayed leads retain that status; the
 template does not claim an assay occurred. The result's
 `gap_after` is its earliest remaining gap. When that gap is smaller or
 cleaner than the card, make it the frontier's new gap: this is how a hard
-target is decomposed.
+target is decomposed. For a step that needs sustained work, plan the slot
+with `--depth deep` (see [Deep dig](#deep-dig)).
 
 **4. Repeat, steering.**
 
@@ -228,6 +229,39 @@ from the easiest.
   about each omission, so check a dry run. The prompt-size warning counts the
   prompt without these inlined texts, which are expected to be long.
 
+## Deep dig
+
+A hard step can need hours of sustained work with computation, which a short
+structured return cannot hold. `plan RUN --stage dig --cards ID --depth deep`
+(or `"depth": "deep"` on a dig slot in `slots.json`) uses
+`templates/prospector/dig-deep.md` for that slot. It is an explicit, per-slot
+exception to the discovery cadence, meant for a selected survivor.
+
+- **No time or word target.** The worker keeps a running `SCRATCH.md` in its
+  work directory, computes small cases freely, writes the full derivation to
+  `DERIVATION.md` and returns one `argument` card whose `gap_after` is the
+  earliest remaining gap. A tool-free worker puts its scratch and derivation
+  in its answer instead, and cannot compute.
+- **No record-keeping for the worker.** The deep template asks for no ledger,
+  hash, catalog or closeout work. The conductor records afterwards: read the
+  derivation, then use `decide`, `mark` and, for a settled variant,
+  `variant RUN solve ID --proof .../work/DERIVATION.md`. The slot's receipt
+  lists both files with their SHA-256.
+- **Budget.** A deep dig is one call however long it runs, and it has no
+  deadline unless `budget.timeout_seconds` sets one. Weigh that before
+  planning several.
+- **Claude.** By default a deep Claude slot is the same as every other Claude
+  slot: no tools, one turn. Setting `deep_dig.claude_tools` to `true` in
+  `run.json` gives deep Claude dig slots, and no other slot, the tools in
+  `deep_dig.claude_tool_names` (at most Read, Write, Edit, Glob, Grep and
+  Bash) and up to `deep_dig.claude_max_turns` turns (default 60). A dry run
+  shows the tools and turn limit. If the turn limit ends the session before
+  a final answer, the call is recorded as failed and is not counted; the
+  scratch and derivation files stay in the work directory. Codex deep slots
+  use the same sandbox as other Codex slots.
+
+[Safety](#safety) says which parts of the confinement are enforced.
+
 ## Records
 
 The tool keeps everything in the run directory: `run.json`, `FRONTIER.md`,
@@ -277,12 +311,36 @@ aggregate helper time, not elapsed user-session time.
 
 ## Safety
 
-Claude explorers have no tools. Codex explorers run in Codex's
+Claude explorers have no tools by default. Codex explorers run in Codex's
 `workspace-write` sandbox rooted at their own work directory, with
 `OPENAI_API_KEY` removed so the ChatGPT login is used. Never add bypass
 flags. Explorers do not run Git, write canonical files or contact anyone.
 CLI login and sandbox availability depend on the local setup. Use
 `doctor --live` only when the owner authorizes a connectivity call.
+
+The one exception to tool-free Claude is the opt-in deep dig. Its command is
+`claude --print --restricted --tools NAMES --permission-mode acceptEdits
+--permission-prompts none --settings SANDBOX ... --max-turns N`, started in
+the slot's work directory, where SANDBOX turns on the CLI's command sandbox
+(`enabled`, `failIfUnavailable`, `autoAllowBashIfSandboxed`, and
+`allowUnsandboxedCommands: false`). The flags were taken from `claude --help`
+of version 2.1.325 and the setting names from that version's settings schema.
+`--max-turns` is a hidden option there: it is absent from the help text but
+defined in the CLI. Check `claude --help` again after a CLI update.
+
+| Safeguard for a deep Claude slot with tools | Status |
+|---|---|
+| Tools only when `run.json` and the slot both opt in; only Read, Write, Edit, Glob, Grep, Bash; no web tool; no permission-bypass flag, and a command containing one is refused | Enforced by `prospector.py`, covered by offline tests |
+| File tools confined to the work directory; user and project settings ignored | Enforced by the CLI's `--restricted` mode according to its help text; not exercised by offline tests |
+| Shell commands run only inside the CLI's sandbox, which restricts writes and network access; the call fails at startup if the sandbox cannot start | Enforced by the CLI's sandbox according to its settings schema; not exercised by offline tests |
+| Anything that would ask for permission is denied, since nobody answers prompts | Enforced by the CLI (`--permission-prompts none`); not exercised by offline tests |
+| Shell commands reading files elsewhere on the machine, including hub records and `hidden` material | Instructed only; the sandbox does not hide the disk |
+| No Git, no publishing, no software installs | Instructed; partly backed by the sandbox's write and network limits |
+
+After the first deep Claude slot with tools, read its `receipt.json`:
+`permission_denials` counts refused tool uses (`null` if the CLI did not
+report them), and a shell that never ran suggests the sandbox settings did
+not take effect on that machine.
 
 ## Measuring
 
@@ -308,7 +366,7 @@ python3 tools/prospector.py variant RUN solve ID --proof FILE [--review-scope ".
 python3 tools/prospector.py run RUN [--dry-run]
 python3 tools/prospector.py cards RUN [--status open] [--show CARD]
 python3 tools/prospector.py plan RUN --stage assay [--cards CARD ...]
-python3 tools/prospector.py plan RUN --stage dig --cards CARD
+python3 tools/prospector.py plan RUN --stage dig --cards CARD [--depth deep]
 python3 tools/prospector.py mark RUN CARD ... --status parked --reason "..."
 python3 tools/prospector.py decide RUN --round 1 --slot s1 --action revise --reason "..." --next-question "..."
 python3 tools/prospector.py status RUN
@@ -318,6 +376,6 @@ python3 tools/prospector.py doctor [--live]
 ```
 
 Templates: `templates/prospector/` holds the run defaults, the frontier card,
-the explorer, assay, dig and variants prompts, the claim-card and variants
-schemas and the lens library. Tests: `tools/test_prospector.py` (offline stub backend and local
+the explorer, assay, dig, deep-dig and variants prompts, the claim-card and
+variants schemas and the lens library. Tests: `tools/test_prospector.py` (offline stub backend and local
 subprocess monitoring; no model calls).

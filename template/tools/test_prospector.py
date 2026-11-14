@@ -715,5 +715,175 @@ class VariantLadderTests(RunCase):
         self.assertTrue(session_filter._worker_prompt(self.prompt(1)))
 
 
+class DeepDigTests(RunCase):
+    """Item 2: sustained digs, with tools for Claude only on explicit opt-in."""
+
+    STANDARD = ['--print', '--tools', '', '--strict-mcp-config', '--disable-slash-commands',
+                '--no-session-persistence', '--safe-mode', '--verbose', '--output-format',
+                'stream-json', '--max-turns', '1']
+
+    def card(self):
+        call('plan', str(self.run), '-n', '1', '--backend', 'stub')
+        call('run', str(self.run))
+        return pr.read_jsonl(self.run / 'cards.jsonl')[0]['id']
+
+    def claude_command(self, spec, slot):
+        sdir = self.tmp / 'backend'; sdir.mkdir(exist_ok=True)
+        work = sdir / 'work'; work.mkdir(exist_ok=True)
+        seen = {}
+
+        def fake_process(command, prompt, cwd, env, timeout, stdout, stderr, **kwargs):
+            seen.update(cwd=cwd, env=env)
+            stdout.write_text(json.dumps(dict(type='result', result='{"summary":"s","cards":[],"verdicts":[]}',
+                                              num_turns=7, permission_denials=[{}], usage={})))
+            stderr.write_text('')
+            return 0, 'completed', .1
+
+        with patch.object(pr.shutil, 'which', return_value=sys.executable), \
+                patch.object(pr, 'run_process', side_effect=fake_process):
+            receipt, _ = pr.call_claude(spec, slot, 'fixture', sdir, work)
+        return receipt, seen, work
+
+    def test_deep_slot_uses_its_own_template_without_cadence_targets_or_duties(self):
+        card = self.card()
+        call('plan', str(self.run), '--stage', 'dig', '--backend', 'codex', '--cards', card,
+             '--depth', 'deep')
+        self.assertEqual(self.slots(2)[0]['depth'], 'deep')
+        self.assertIn('[deep]', call('run', str(self.run), '--dry-run'))
+        deep = self.prompt(2)
+        self.assertIn('no time target and no length target', deep)
+        self.assertIn('SCRATCH.md', deep)
+        self.assertIn('DERIVATION.md', deep)
+        self.assertIn('Compute small cases freely', deep)
+        self.assertIn('`gap_after`', deep)
+        for absent in ('5–10 minutes', '300–600 words', 'FIRST_RETURN', 'Early mathematical return',
+                       '{{'):
+            self.assertNotIn(absent, deep)
+        template = (pr.TEMPLATES / 'dig-deep.md').read_text()
+        duties = 'You have no record-keeping duties: no ledger, hashes, catalog entries, notes\nor closeout.'
+        self.assertIn(duties, template)
+        rest = template.replace(duties, '').lower()
+        for word in ('ledger', 'hash', 'catalog', 'closeout', 'checkpoint'):
+            self.assertNotIn(word, rest, 'the deep worker carries no record-keeping duty')
+        call('plan', str(self.run), '--stage', 'dig', '--backend', 'codex', '--cards', card, '--force',
+             '--round', '2')
+        call('run', str(self.run), '--dry-run')
+        self.assertIn('5–10 minutes', self.prompt(2), 'a standard dig keeps the cadence target')
+        self.assertNotIn('depth', self.slots(2)[0])
+
+    def test_depth_applies_to_dig_only(self):
+        with self.assertRaisesRegex(SystemExit, 'dig stage only'):
+            call('plan', str(self.run), '--depth', 'deep')
+        call('plan', str(self.run), '-n', '1', '--backend', 'stub')
+        slots = self.slots(1)
+        slots[0]['depth'] = 'deep'
+        self.write_slots(1, slots)
+        with self.assertRaisesRegex(SystemExit, 'dig stage only'):
+            call('run', str(self.run), '--dry-run')
+        slots[0]['depth'] = 'bottomless'
+        self.write_slots(1, slots)
+        with self.assertRaisesRegex(SystemExit, 'depth must be one of'):
+            call('run', str(self.run), '--dry-run')
+
+    def test_claude_stays_tool_free_unless_run_and_slot_both_opt_in(self):
+        spec = pr.load(self.run / 'run.json')
+        self.assertIs(spec['deep_dig']['claude_tools'], False, 'the template default is tool-free')
+        deep = dict(backend='claude', stage='dig', depth='deep')
+        cases = [(spec, deep), (spec, dict(backend='claude', stage='dig')),
+                 (dict(spec, deep_dig=dict(claude_tools=True)), dict(backend='claude', stage='dig')),
+                 (dict(spec, deep_dig=dict(claude_tools=True)),
+                  dict(backend='claude', stage='prospect', depth='deep')),
+                 (dict(spec, deep_dig=dict(claude_tools='yes')), deep),
+                 ({k: v for k, v in spec.items() if k != 'deep_dig'}, deep)]
+        for case_spec, slot in cases:
+            with self.subTest(slot=slot, setting=case_spec.get('deep_dig')):
+                receipt, _, _ = self.claude_command(case_spec, slot)
+                self.assertEqual(receipt['command'][:len(self.STANDARD)], self.STANDARD)
+                self.assertNotIn('tools', receipt)
+
+    def test_opted_in_deep_claude_gets_confined_tools_and_never_a_bypass_flag(self):
+        spec = pr.load(self.run / 'run.json')
+        spec['deep_dig'].update(claude_tools=True, claude_max_turns=25)
+        receipt, seen, work = self.claude_command(spec, dict(backend='claude', stage='dig', depth='deep'))
+        command = receipt['command']
+        self.assertEqual(command[command.index('--tools') + 1], 'Read,Write,Edit,Glob,Grep,Bash')
+        self.assertEqual(command[command.index('--max-turns') + 1], '25')
+        self.assertEqual(command[command.index('--permission-mode') + 1], 'acceptEdits')
+        self.assertEqual(command[command.index('--permission-prompts') + 1], 'none')
+        for flag in ('--restricted', '--safe-mode', '--strict-mcp-config', '--no-session-persistence'):
+            self.assertIn(flag, command)
+        sandbox = json.loads(command[command.index('--settings') + 1])['sandbox']
+        self.assertEqual(sandbox, dict(enabled=True, failIfUnavailable=True,
+                                       autoAllowBashIfSandboxed=True, allowUnsandboxedCommands=False))
+        self.assertFalse(any('dangerously' in part or 'bypass' in part.lower() for part in command))
+        self.assertNotIn('--add-dir', command, 'no directory beyond the work directory')
+        self.assertEqual(seen['cwd'], work, 'the process starts in the slot work directory')
+        self.assertEqual((receipt['tools'], receipt['turns'], receipt['permission_denials']),
+                         (['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash'], 7, 1))
+        spec['backends']['claude']['model'] = '--dangerously-skip-permissions'
+        receipt, _, _ = self.claude_command(spec, dict(backend='claude', stage='dig', depth='deep'))
+        self.assertEqual(receipt['status'], 'failed')
+        self.assertIn('permission-bypass', receipt['error'])
+
+    def test_tool_list_and_turns_are_validated_before_launch(self):
+        card = self.card()
+        call('plan', str(self.run), '--stage', 'dig', '--backend', 'claude', '--cards', card,
+             '--depth', 'deep')
+        spec = pr.load(self.run / 'run.json')
+        for setting, message in ((dict(claude_tools=True, claude_tool_names='Read,WebFetch'), 'may only name'),
+                                 (dict(claude_tools=True, claude_max_turns=0), 'positive integer'),
+                                 (dict(claude_tools=True, claude_max_turns='many'), 'positive integer')):
+            self.edit_spec(deep_dig=setting)
+            with self.subTest(setting=setting), self.assertRaisesRegex(SystemExit, message):
+                call('run', str(self.run), '--dry-run')
+        self.edit_spec(deep_dig=dict(claude_tools=True, claude_tool_names='Read,Write,Bash'))
+        out = call('run', str(self.run), '--dry-run')
+        self.assertIn('tools=Read,Write,Bash, up to 60 turns', out)
+        prompt = self.prompt(2)
+        self.assertIn('You have these tools in this slot: Read, Write, Bash.', prompt)
+        self.assertIn('Do not read or write anything outside that directory, use the network', prompt)
+        self.assertIn('SCRATCH.md', prompt)
+        self.edit_spec(deep_dig=spec['deep_dig'])
+        call('run', str(self.run), '--dry-run')
+        prompt = self.prompt(2)
+        self.assertIn('You have no tools or filesystem access in this slot.', prompt)
+        self.assertIn('keep the running scratch in your answer', prompt)
+        self.assertNotIn('SCRATCH.md', prompt)
+
+    def test_deep_dig_receipt_retains_hashes_of_scratch_and_derivation(self):
+        card = self.card()
+        call('plan', str(self.run), '--stage', 'dig', '--backend', 'stub', '--cards', card,
+             '--depth', 'deep')
+        stub = pr.call_stub
+
+        def writer(spec, slot, prompt, sdir, work, **kwargs):
+            (work / 'SCRATCH.md').write_text('tried rank two; it fails at the gluing step')
+            (work / 'DERIVATION.md').write_text('Step 1. ...')
+            return stub(spec, slot, prompt, sdir, work)
+
+        with patch.dict(pr.CALLERS, stub=writer):
+            call('run', str(self.run))
+        receipt = pr.load(self.run / 'rounds/r02/s1/receipt.json')
+        self.assertEqual([Path(f['path']).name for f in receipt['deep_files']], ['SCRATCH.md', 'DERIVATION.md'])
+        for item in receipt['deep_files']:
+            self.assertEqual(pr.sha((self.run / item['path']).read_bytes()), item['sha256'])
+        argument = pr.read_jsonl(self.run / 'cards.jsonl')[-1]
+        self.assertEqual((argument['kind'], argument['gap_after']), ('argument', 'none'))
+        self.assertEqual(pr.budget_use(self.run)[0], 2, 'a deep dig is still one call')
+
+    def test_deep_prompt_is_recognized_as_an_internal_worker_by_mathdesk(self):
+        harness = pr.HUB / 'harness' / 'core'
+        if not (harness / 'session_filter.py').exists():
+            self.skipTest('MathDesk harness is not installed beside the tools')
+        sys.path.insert(0, str(harness))
+        self.addCleanup(sys.path.remove, str(harness))
+        import session_filter
+        card = self.card()
+        call('plan', str(self.run), '--stage', 'dig', '--backend', 'codex', '--cards', card,
+             '--depth', 'deep')
+        call('run', str(self.run), '--dry-run')
+        self.assertTrue(session_filter._worker_prompt(self.prompt(2)))
+
+
 if __name__ == '__main__':
     unittest.main()

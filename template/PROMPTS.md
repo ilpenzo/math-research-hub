@@ -103,6 +103,13 @@ and then:
 > one is settled, save its complete proof with `variant solve` and tell me
 > its review scope.
 
+**Deep dig on one hard step.**
+> In the Prospector run [run], plan a deep dig on card [card ID] for the step
+> [missing implication]. Show me the dry run first. [I allow file and shell
+> tools for the Claude deep slot in this run.] When it returns, read the
+> derivation and scratch notes yourself and tell me the earliest remaining
+> gap.
+
 ## Finishing
 
 **Close out.**

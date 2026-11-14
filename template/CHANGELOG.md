@@ -13,6 +13,12 @@ in each project's CHANGELOG.md. Newest first.
   proofs and survivors' full sketches are inlined whole or omitted with a
   note. Nothing from Prospector is a verified result.
 
+- Prospector search upgrade, deep dig: `plan --stage dig --depth deep` gives
+  one slot sustained work with a running scratch file, free computation and
+  a full derivation, with no time or word target and no record-keeping
+  duties. Claude stays tool-free unless `deep_dig.claude_tools` is set in the
+  run file.
+
 - Connection-workspace release: modular publication kernel, scoped lexical/local
   semantic recall, graph/comparison, research aids and Gap briefs, durable frontier
   choices and same-service saved-context recovery. Fresh installation contains

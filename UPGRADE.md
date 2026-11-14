@@ -14,6 +14,12 @@ changes selection or permissions is off unless a run file asks for it.
   `max_per_slot`) and `default_slots.variants`. A run with no variants plans
   and prompts exactly as before. Prompts now also carry survivors' full
   sketches, counted against `max_inline_chars` after named context files.
+- Deep dig. New file `dig-deep.md`; new slot field `depth` and run setting
+  `deep_dig` (`claude_tools`, `claude_tool_names`, `claude_max_turns`). With
+  `claude_tools` absent or false, every Claude command is the same as before.
+  Before turning it on, run `claude --help` and confirm `--restricted`,
+  `--tools`, `--permission-mode`, `--permission-prompts` and `--settings`
+  are listed; PROSPECTOR.md's Safety section says what is enforced.
 
 ## Prospector discovery update
 
