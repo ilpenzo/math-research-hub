@@ -35,6 +35,7 @@
   "hidden": [],
   "feed_forward": {"survivors": 2, "kills": 4, "open": 3},
   "variant_ladder": {"prefer_open": true, "inline_solved": 2, "max_per_slot": 6},
+  "mechanism_search": {"refuse_shared_words": 6},
   "deep_dig": {"claude_tools": false, "claude_tool_names": "Read,Write,Edit,Glob,Grep,Bash", "claude_max_turns": 60},
   "lenses_extra": null,
   "budget_changes": [],

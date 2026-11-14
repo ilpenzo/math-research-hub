@@ -14,6 +14,10 @@ changes selection or permissions is off unless a run file asks for it.
   `max_per_slot`) and `default_slots.variants`. A run with no variants plans
   and prompts exactly as before. Prompts now also carry survivors' full
   sketches, counted against `max_inline_chars` after named context files.
+- Mechanism search. New file `mechanism-search.md`; new run setting
+  `mechanism_search.refuse_shared_words`. `frontier.md` and the
+  `analogy-transfer` and `literature-mechanism` lenses in `lenses.json`
+  changed wording; if you edited your copies, merge by hand.
 - Deep dig. New file `dig-deep.md`; new slot field `depth` and run setting
   `deep_dig` (`claude_tools`, `claude_tool_names`, `claude_max_turns`). With
   `claude_tools` absent or false, every Claude command is the same as before.

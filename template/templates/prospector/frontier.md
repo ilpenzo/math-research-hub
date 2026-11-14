@@ -25,6 +25,10 @@ necessary text inline and no instructions to search or open files.
 
 State each usable result with its hypotheses, conclusion and review scope;
 append the record ID as provenance. Supply the exact excerpt if needed.
+A proof excerpt or a mechanism summary belongs here as well as a statement:
+say what the proof does (the construction, the invariant, the gluing step),
+where it is (source and exact locator, or the context file holding the
+excerpt) and whether the source is checked or still a lead.
 
 ## Controls every proposal must survive
 

@@ -139,6 +139,10 @@ and the best current ideas. FRONTIER.md is the only context every explorer
 shares, so its quality bounds the run's quality. Rewrite it between rounds;
 do not append history.
 
+**0b. Mechanism search (optional, before prospecting).** Look across fields
+for a proof that overcame an obstruction of the same shape, and give
+explorers the proof itself. See [Mechanism search](#mechanism-search).
+
 **1. Prospect.** `plan` assigns distinct strategy lenses, unused ones first,
 from `templates/prospector/lenses.json`. Idea lenses go to Claude and
 computing lenses to Codex, which may run Macaulay2, Sage and Python in its own
@@ -229,6 +233,45 @@ from the easiest.
   about each omission, so check a dry run. The prompt-size warning counts the
   prompt without these inlined texts, which are expected to be long.
 
+## Mechanism search
+
+A model's main advantage is breadth, so search for proof mechanisms across
+fields, not for more facts within one. The conductor does this in the main
+session before prospecting. Explorers get no network access; they receive
+what the conductor brings back.
+
+1. **Restate the obstruction in field-neutral terms.**
+   `mechanism RUN start` writes the worksheet `MECHANISM_SEARCH.md`. Fill in
+   the quantifier shape, what must be selected or glued, and what fails, with
+   none of the project's objects or notation.
+2. **Search, hub first.** Search the hub and its library, then the literature
+   in several fields, for proofs that overcame an obstruction of that shape.
+   Outside queries contain no unpublished statement from the hub. Register
+   each one before sending it with `mechanism RUN query "..." --where "..."`.
+   The tool refuses a query that contains a `hidden` item or repeats six
+   consecutive words (`mechanism_search.refuse_shared_words`) of the
+   frontier, the variants or the cards. This catches copied text only;
+   keeping a paraphrase neutral is the conductor's duty. Record what came
+   back, including nothing, with `mechanism RUN result q1 --result "..."`.
+   Queries and results are kept in `mechanism-queries.jsonl`. The tool itself
+   searches nothing and contacts nothing.
+3. **Bring the proofs back.** For each candidate, save the statement and the
+   decisive steps of the proof, quoted, and stamp the file with
+   `mechanism RUN excerpt FILE --title "..." --source "..." --locator "..."`.
+   Source and exact locator are required. The stamped copy in `mechanisms/`
+   states its review scope: a lead, until `--checked` records a source check.
+   Add its path to `context_files` or to one slot's `files`, and put a
+   one-line mechanism summary in the frontier's "Tools and results that may
+   help", which may carry a proof excerpt or mechanism summary as well as a
+   statement.
+4. **Use them.** The `analogy-transfer` and `literature-mechanism` lenses
+   work from supplied excerpts: they map the quoted proof's objects to ours
+   and name the first step that does not transfer.
+
+Sources found this way stay leads until checked and retained under the
+library rules. Web use follows the hub's own rules on searching and on
+retaining consulted literature.
+
 ## Deep dig
 
 A hard step can need hours of sustained work with computation, which a short
@@ -268,7 +311,9 @@ The tool keeps everything in the run directory: `run.json`, `FRONTIER.md`,
 each slot's prompt, raw output, response and receipt with SHA-256 hashes,
 `cards.jsonl`, `dispositions.jsonl` and `ledger.jsonl` (status, timing,
 model and usage when the CLI reports it). The ladder adds `variants.jsonl`,
-`variant-events.jsonl` and the hashed proofs under `variants/`. Do not copy
+`variant-events.jsonl` and the hashed proofs under `variants/`. Mechanism
+search adds `MECHANISM_SEARCH.md`, `mechanism-queries.jsonl`,
+`mechanisms.jsonl` and the stamped excerpts under `mechanisms/`. Do not copy
 these into the NOTE.
 
 While a model process runs, its slot's `active.json` records the child and
@@ -357,6 +402,11 @@ instructed, not enforced.
 
 ```
 python3 tools/prospector.py init RUN --project P --gap K-ID --target "..." --authorization "..."
+python3 tools/prospector.py mechanism RUN start
+python3 tools/prospector.py mechanism RUN query "..." --where "arXiv"
+python3 tools/prospector.py mechanism RUN result q1 --result "..." [--source "..."]
+python3 tools/prospector.py mechanism RUN excerpt FILE --title "..." --source "..." --locator "..."
+python3 tools/prospector.py mechanism RUN list
 python3 tools/prospector.py plan RUN [-n 6] [--target-only | --variant ID]
 python3 tools/prospector.py plan RUN --stage variants
 python3 tools/prospector.py variant RUN list
@@ -376,6 +426,6 @@ python3 tools/prospector.py doctor [--live]
 ```
 
 Templates: `templates/prospector/` holds the run defaults, the frontier card,
-the explorer, assay, dig, deep-dig and variants prompts, the claim-card and
-variants schemas and the lens library. Tests: `tools/test_prospector.py` (offline stub backend and local
+the explorer, assay, dig, deep-dig and variants prompts, the mechanism-search
+worksheet, the claim-card and variants schemas and the lens library. Tests: `tools/test_prospector.py` (offline stub backend and local
 subprocess monitoring; no model calls).

@@ -42,6 +42,9 @@ DEPTHS = ('standard', 'deep')
 DEEP_CLAUDE_TOOLS = ('Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash')
 DEEP_CLAUDE_TURNS = 60
 DEEP_FILES = ('SCRATCH.md', 'DERIVATION.md')
+SHARED_WORD_RUN = 6
+LEAD_SCOPE = ('lead; not yet checked under the library rules. Verify the exact statement, version '
+              'and hypotheses in the primary source before relying on it')
 FRONTIER_WORD_LIMIT = 1200
 HEARTBEAT_SECONDS = 30
 MONITOR_SECONDS = 1
@@ -316,6 +319,135 @@ def cmd_variant(args):
           + (f" (proof {event['proof']}, review scope: {event['review_scope']})"
              if event['status'] == 'solved' else '')
           + '. This is run state only; no catalog record or status was changed.')
+
+
+# mechanism search ----------------------------------------------------------
+
+def words(text):
+    return re.findall(r'[a-z0-9]+', str(text).lower())
+
+
+def shared_run(query, corpus, length):
+    """The first run of `length` consecutive words that `query` shares with `corpus`, or None."""
+    query_words, corpus_words = words(query), words(corpus)
+    seen = {tuple(corpus_words[i:i + length]) for i in range(len(corpus_words) - length + 1)}
+    for i in range(len(query_words) - length + 1):
+        if tuple(query_words[i:i + length]) in seen:
+            return ' '.join(query_words[i:i + length])
+    return None
+
+
+def unpublished_text(run, spec):
+    """Run text that an outside query must not repeat: frontier, target, variants and cards."""
+    parts = [spec.get('target') or '']
+    frontier = run / 'FRONTIER.md'
+    if frontier.exists():
+        parts.append(frontier.read_text(encoding='utf-8'))
+    parts += [variant['statement'] for variant in variants_by_id(run).values()]
+    for card in cards_by_id(run).values():
+        parts += [card['statement'], card['sketch']]
+    return parts
+
+
+def screen_query(run, spec, query):
+    """Mechanical screen only: verbatim reuse and hidden items. Paraphrase is the conductor's duty."""
+    for token in spec.get('hidden') or []:
+        if token and token.lower() in query.lower():
+            return f'it contains the hidden item {token!r}'
+    length = (spec.get('mechanism_search') or {}).get('refuse_shared_words', SHARED_WORD_RUN)
+    if isinstance(length, bool) or not isinstance(length, int) or length < 2:
+        sys.exit('mechanism_search.refuse_shared_words must be an integer of at least 2')
+    for part in unpublished_text(run, spec):
+        run_of_words = shared_run(query, part, length)
+        if run_of_words:
+            return (f'it repeats {length} consecutive words of this run\'s frontier, variants or '
+                    f'cards ("{run_of_words}")')
+    return None
+
+
+def cmd_mechanism(args):
+    """Keep the conductor's cross-field search on record. Sends nothing anywhere."""
+    run, spec = open_run(args.run_dir)
+    queries = read_jsonl(run / 'mechanism-queries.jsonl')
+    excerpts = read_jsonl(run / 'mechanisms.jsonl')
+    asked = [e for e in queries if e['event'] == 'query']
+    if args.action == 'start':
+        path = run / 'MECHANISM_SEARCH.md'
+        if path.exists():
+            sys.exit(f'{path} exists; keep working in it')
+        path.write_text(fill((TEMPLATES / 'mechanism-search.md').read_text(encoding='utf-8'), {
+            'title': clip(spec.get('target') or spec.get('name') or run.name, 80)}), encoding='utf-8')
+        print(f'Wrote {path}. Fill in section 1 before registering any query.')
+    elif args.action == 'query':
+        if not args.text.strip():
+            sys.exit('A query needs text')
+        problem = screen_query(run, spec, args.text)
+        if problem:
+            sys.exit(f'Query refused: {problem}. Restate it in field-neutral terms: outside '
+                     'queries carry no unpublished statement from the hub.')
+        event = dict(event='query', id=f'q{len(asked) + 1}', query=args.text, where=args.where or '',
+                     screen='no hidden item and no long verbatim overlap with the run; wording '
+                            'remains the conductor\'s responsibility', by='conductor', utc=utc())
+        append(run / 'mechanism-queries.jsonl', event)
+        print(f"Registered {event['id']}. The tool searches nothing itself; run the search in the "
+              f"main session, then record what came back with `mechanism RUN result {event['id']}`.")
+    elif args.action == 'result':
+        if args.query not in {e['id'] for e in asked}:
+            sys.exit(f'Unknown query {args.query}')
+        append(run / 'mechanism-queries.jsonl', dict(
+            event='result', id=args.query, result=args.result, source=args.source or '',
+            by='conductor', utc=utc()))
+        print(f'Recorded the result of {args.query}. Sources named in it are leads until checked.')
+    elif args.action == 'excerpt':
+        try:
+            body = Path(args.file).read_text(encoding='utf-8', errors='replace')
+        except OSError as exc:
+            sys.exit(f'Excerpt file: {exc}')
+        if not body.strip():
+            sys.exit('The excerpt file is empty; bring the proof text itself')
+        if args.query and args.query not in {e['id'] for e in asked}:
+            sys.exit(f'Unknown query {args.query}')
+        check_hidden(spec, 'mechanism excerpt', ' '.join([body, args.title, args.source, args.locator,
+                                                          args.mechanism or '']))
+        name = f'm{len(excerpts) + 1}'
+        scope = f'checked: {args.checked}' if args.checked else LEAD_SCOPE
+        text = '\n'.join([
+            f'# Mechanism excerpt {name}: {args.title}', '',
+            f'- Source: {args.source}', f'- Locator: {args.locator}',
+            f"- Found by query: {args.query or 'not recorded'}",
+            f'- Review scope: {scope}.',
+            f"- Mechanism: {args.mechanism or 'see the excerpt'}", '',
+            '## Excerpt', '', body.strip(), ''])
+        folder = run / 'mechanisms'
+        folder.mkdir(exist_ok=True)
+        slug = '-'.join(words(args.title)[:6]) or 'excerpt'
+        kept = folder / f'{name}-{slug}.md'
+        kept.write_text(text, encoding='utf-8')
+        append(run / 'mechanisms.jsonl', dict(
+            id=name, title=args.title, source=args.source, locator=args.locator, query=args.query,
+            review_scope=scope, path=str(kept.relative_to(run)), sha256=sha(text), utc=utc()))
+        try:
+            named = str(kept.relative_to(HUB))
+        except ValueError:
+            named = str(kept)
+        print(f'Kept {kept} ({scope.split(";")[0].split(":")[0]}). To show it to explorers, add '
+              f'"{named}" to context_files in run.json or to a slot\'s files.')
+    else:
+        results = {}
+        for event in queries:
+            if event['event'] == 'result':
+                results.setdefault(event['id'], []).append(event)
+        for event in asked:
+            print(f"{event['id']} [{event['where'] or 'source not stated'}] {event['query']}")
+            for result in results.get(event['id'], []):
+                print(f"    -> {clip(result['result'], 200)}"
+                      + (f" ({clip(result['source'], 120)})" if result['source'] else ''))
+            if event['id'] not in results:
+                print('    -> no result recorded yet')
+        for item in excerpts:
+            print(f"{item['id']} {clip(item['title'], 60)} | {clip(item['source'], 60)} | "
+                  f"{clip(item['locator'], 40)} | {item['review_scope'].split(';')[0]} | {item['path']}")
+        print(f'{len(asked)} queries, {len(excerpts)} excerpts')
 
 
 # init ----------------------------------------------------------------------
@@ -1449,6 +1581,12 @@ def cmd_status(args):
         if status[card['id']] in ('survives', 'promoted'):
             print(f"  {card['id']} [{status[card['id']]}] {clip(card['title'], 100)}"
                   + (f" | gap: {clip(card['gap_after'], 80)}" if card['kind'] == 'argument' else ''))
+    queries = [e for e in read_jsonl(run / 'mechanism-queries.jsonl') if e['event'] == 'query']
+    if queries or (run / 'mechanisms.jsonl').exists():
+        answered = {e['id'] for e in read_jsonl(run / 'mechanism-queries.jsonl') if e['event'] == 'result'}
+        print(f"Mechanism search: {len(queries)} queries "
+              f"({sum(1 for q in queries if q['id'] not in answered)} without a recorded result), "
+              f"{len(read_jsonl(run / 'mechanisms.jsonl'))} excerpts")
     ladder = variant_state(run)
     if ladder:
         print('Variants: ' + ', '.join(f'{k}={v}' for k, v in sorted(
@@ -1563,6 +1701,27 @@ def main(argv=None):
     a.add_argument('--card', help='Card the proof came from, as provenance')
     a.add_argument('--reason', default='')
     p.set_defaults(func=cmd_variant)
+    p = sub.add_parser('mechanism', help='Record the cross-field mechanism search (searches nothing itself)')
+    p.add_argument('run_dir')
+    actions = p.add_subparsers(dest='action', required=True)
+    actions.add_parser('start', help='Write the MECHANISM_SEARCH.md worksheet')
+    a = actions.add_parser('query', help='Screen and register an outside query before sending it')
+    a.add_argument('text')
+    a.add_argument('--where', help='Where it will be searched (arXiv, zbMATH, a search engine ...)')
+    a = actions.add_parser('result', help='Record what a registered query returned')
+    a.add_argument('query')
+    a.add_argument('--result', required=True)
+    a.add_argument('--source', help='Papers or pages found, with locators')
+    a = actions.add_parser('excerpt', help='Stamp a proof excerpt with source, locator and review scope')
+    a.add_argument('file')
+    a.add_argument('--title', required=True)
+    a.add_argument('--source', required=True, help='Author, title, version or identifier')
+    a.add_argument('--locator', required=True, help='Exact theorem, section and pages of the excerpt')
+    a.add_argument('--query', help='Registered query that found it')
+    a.add_argument('--mechanism', help='What the proof does, in a sentence or two')
+    a.add_argument('--checked', help='Source-check reference, once checked under the library rules')
+    actions.add_parser('list', help='Queries with results, and excerpts')
+    p.set_defaults(func=cmd_mechanism)
     p = sub.add_parser('run', help='Launch a planned round in parallel')
     p.add_argument('run_dir')
     p.add_argument('--round', type=int, help='Default: latest planned round')

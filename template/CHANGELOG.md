@@ -19,6 +19,12 @@ in each project's CHANGELOG.md. Newest first.
   duties. Claude stays tool-free unless `deep_dig.claude_tools` is set in the
   run file.
 
+- Prospector search upgrade, mechanism search: a conductor step before
+  prospecting restates the obstruction in field-neutral terms, searches
+  across fields, and brings proof excerpts with exact locators into the
+  prompts. Queries are screened for copied hub text and logged with their
+  results; sources stay leads until checked.
+
 - Connection-workspace release: modular publication kernel, scoped lexical/local
   semantic recall, graph/comparison, research aids and Gap briefs, durable frontier
   choices and same-service saved-context recovery. Fresh installation contains

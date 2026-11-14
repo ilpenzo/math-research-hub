@@ -885,5 +885,130 @@ class DeepDigTests(RunCase):
         self.assertTrue(session_filter._worker_prompt(self.prompt(2)))
 
 
+class MechanismSearchTests(RunCase):
+    """Item 3: the conductor's cross-field search is screened and kept; the tool searches nothing."""
+
+    def setUp(self):
+        super().setUp()
+        (self.run / 'FRONTIER.md').write_text(
+            '# Frontier\n\n## Target\n\nEvery widget of rank two over a curve of genus three is blue.\n')
+
+    def test_worksheet_asks_for_a_field_neutral_restatement(self):
+        call('mechanism', str(self.run), 'start')
+        sheet = (self.run / 'MECHANISM_SEARCH.md').read_text()
+        for needed in ('Quantifier shape', 'What must be selected or glued', 'What fails',
+                       'no unpublished\nstatement from the hub', 'exact locator', 'is a lead',
+                       'Search the hub and its library first'):
+            self.assertIn(needed, sheet)
+        self.assertNotIn('{{', sheet)
+        with self.assertRaisesRegex(SystemExit, 'exists'):
+            call('mechanism', str(self.run), 'start')
+
+    def test_queries_are_screened_registered_and_given_results(self):
+        with self.assertRaisesRegex(SystemExit, 'repeats 6 consecutive words'):
+            call('mechanism', str(self.run), 'query',
+                 'is every widget of rank two over a curve blue')
+        self.edit_spec(hidden=['SECRET-R001'])
+        with self.assertRaisesRegex(SystemExit, 'hidden item'):
+            call('mechanism', str(self.run), 'query', 'proof of secret-r001')
+        self.assertFalse((self.run / 'mechanism-queries.jsonl').exists(), 'a refused query is not logged')
+        out = call('mechanism', str(self.run), 'query',
+                   'gluing local sections when the obstruction class is torsion', '--where', 'arXiv')
+        self.assertIn('Registered q1', out)
+        self.assertIn('searches nothing itself', out)
+        with self.assertRaisesRegex(SystemExit, 'Unknown query'):
+            call('mechanism', str(self.run), 'result', 'q9', '--result', 'x')
+        call('mechanism', str(self.run), 'query', 'uniform choice of extremal object in a family')
+        call('mechanism', str(self.run), 'result', 'q1', '--result', 'Two papers on torsion obstructions',
+             '--source', 'Author, Title, Theorem 3.2')
+        events = pr.read_jsonl(self.run / 'mechanism-queries.jsonl')
+        self.assertEqual([(e['event'], e['id']) for e in events],
+                         [('query', 'q1'), ('query', 'q2'), ('result', 'q1')])
+        self.assertEqual(events[0]['where'], 'arXiv')
+        listing = call('mechanism', str(self.run), 'list')
+        self.assertIn('Two papers on torsion obstructions', listing)
+        self.assertIn('no result recorded yet', listing)
+        self.assertIn('Mechanism search: 2 queries (1 without a recorded result), 0 excerpts',
+                      call('status', str(self.run)))
+        # The threshold is a run setting; statements in variants and cards are screened too.
+        self.edit_spec(mechanism_search={'refuse_shared_words': 3}, hidden=[])
+        with self.assertRaisesRegex(SystemExit, 'repeats 3 consecutive words'):
+            call('mechanism', str(self.run), 'query', 'curve of genus four')
+        self.edit_spec(mechanism_search={'refuse_shared_words': 6})
+        call('variant', str(self.run), 'add', '--title', 'v', '--statement',
+             'Each split gadget admits a canonical purple framing.', '--kind', 'special-case',
+             '--relation', 'implied-by-target', '--difficulty', '1')
+        with self.assertRaisesRegex(SystemExit, 'repeats 6 consecutive words'):
+            call('mechanism', str(self.run), 'query', 'split gadget admits a canonical purple framing')
+
+    def test_excerpt_is_stamped_as_a_lead_with_source_and_locator(self):
+        raw = self.tmp / 'excerpt.txt'
+        raw.write_text('Theorem 3.2. Torsion classes glue.\n\nProof. Average over the group. QED\n')
+        for missing in ('--source', '--locator'):
+            arguments = ['--title', 'Averaging', '--source', 'Author, Title, v2', '--locator', 'Thm 3.2']
+            index = arguments.index(missing)
+            del arguments[index:index + 2]
+            with self.subTest(missing=missing), self.assertRaises(SystemExit), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                call('mechanism', str(self.run), 'excerpt', str(raw), *arguments)
+        call('mechanism', str(self.run), 'query', 'gluing when the obstruction class is torsion')
+        out = call('mechanism', str(self.run), 'excerpt', str(raw), '--title', 'Averaging trick',
+                   '--source', 'Author, Title, v2', '--locator', 'Theorem 3.2 and proof, pp. 14-16',
+                   '--query', 'q1', '--mechanism', 'Average a local choice over a finite group')
+        item = pr.read_jsonl(self.run / 'mechanisms.jsonl')[0]
+        kept = self.run / item['path']
+        text = kept.read_text()
+        self.assertEqual(pr.sha(text), item['sha256'])
+        for needed in ('- Source: Author, Title, v2', '- Locator: Theorem 3.2 and proof, pp. 14-16',
+                       '- Found by query: q1', 'Review scope: lead; not yet checked under the library rules',
+                       'Average over the group. QED'):
+            self.assertIn(needed, text)
+        self.assertIn('context_files', out)
+        # Explorers receive the proof itself together with its lead status.
+        call('plan', str(self.run), '-n', '1', '--backend', 'stub')
+        slots = self.slots(1)
+        slots[0]['files'] = [str(kept)]
+        self.write_slots(1, slots)
+        call('run', str(self.run), '--dry-run')
+        self.assertIn('Average over the group. QED', self.prompt(1))
+        self.assertIn('Review scope: lead; not yet checked', self.prompt(1))
+        call('mechanism', str(self.run), 'excerpt', str(raw), '--title', 'Averaging trick',
+             '--source', 'Author, Title, v2', '--locator', 'Thm 3.2', '--checked', 'L012 source check')
+        self.assertIn('Review scope: checked: L012 source check.',
+                      (self.run / pr.read_jsonl(self.run / 'mechanisms.jsonl')[1]['path']).read_text())
+        self.edit_spec(hidden=['Torsion classes glue'])
+        with self.assertRaisesRegex(SystemExit, 'Hidden item'):
+            call('mechanism', str(self.run), 'excerpt', str(raw), '--title', 't', '--source', 's',
+                 '--locator', 'l')
+
+    def test_mechanism_commands_open_no_connection_and_start_no_process(self):
+        import socket
+        raw = self.tmp / 'excerpt.txt'; raw.write_text('Proof text.')
+        refuse = lambda *a, **k: self.fail('the mechanism command reached outside the run directory')
+        with patch.object(socket, 'socket', side_effect=refuse), \
+                patch.object(pr.subprocess, 'Popen', side_effect=refuse), \
+                patch.object(pr.subprocess, 'run', side_effect=refuse):
+            call('mechanism', str(self.run), 'start')
+            call('mechanism', str(self.run), 'query', 'gluing when the obstruction class is torsion')
+            call('mechanism', str(self.run), 'result', 'q1', '--result', 'nothing relevant')
+            call('mechanism', str(self.run), 'excerpt', str(raw), '--title', 't', '--source', 's',
+                 '--locator', 'l')
+            call('mechanism', str(self.run), 'list')
+        self.assertEqual(pr.budget_use(self.run)[0], 0, 'recording a search debits no call')
+
+    def test_frontier_and_lenses_carry_proof_mechanisms(self):
+        frontier = (pr.TEMPLATES / 'frontier.md').read_text()
+        tools = frontier.split('## Tools and results that may help')[1].split('## ')[0]
+        self.assertIn('proof excerpt or a mechanism summary', tools)
+        self.assertIn('checked or still a lead', tools)
+        library, _ = pr.lenses(pr.load(self.run / 'run.json'))
+        self.assertIn('proof excerpts or mechanism summaries', library['analogy-transfer']['instruction'])
+        self.assertIn('not from the theorem\'s name', library['analogy-transfer']['instruction'])
+        for key in ('instruction', 'instruction_tool_free'):
+            self.assertIn('mechanism excerpts', library['literature-mechanism'][key])
+            self.assertIn('a lead stays a lead', library['literature-mechanism'][key])
+        self.assertNotIn('Search', library['literature-mechanism']['instruction_tool_free'])
+
+
 if __name__ == '__main__':
     unittest.main()

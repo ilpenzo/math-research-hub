@@ -11,7 +11,7 @@
       "id": "analogy-transfer",
       "name": "Analogy transfer",
       "backend": "claude",
-      "instruction": "Find a solved problem elsewhere in mathematics with the same shape (same quantifiers, same kind of obstruction or selection problem). Name the theorem and, more importantly, its proof mechanism. Map its objects and maps to ours explicitly and state exactly what the transferred mechanism would need here."
+      "instruction": "Find a solved problem elsewhere in mathematics with the same shape (same quantifiers, same kind of obstruction or selection problem). If the frontier's tools section or the named context supplies proof excerpts or mechanism summaries from other fields, start from those: work from the quoted proof, not from the theorem's name, and cite its locator and review scope. Otherwise name a theorem from memory and label it a recalled lead. Either way state the proof mechanism, map its objects and maps to ours explicitly, name the first step of the source proof that has no counterpart here, and state exactly what the transferred mechanism would need."
     },
     {
       "id": "compute-examples",
@@ -83,8 +83,8 @@
       "id": "literature-mechanism",
       "name": "Literature mechanism",
       "backend": "codex",
-      "instruction": "Start with the named primary excerpts and source checks. Extract a proof mechanism that fits the gap, with an exact locator, and adapt its objects and maps. Search the hub library or catalog only if a specific missing theorem or hypothesis blocks this move; report the missing fact, search terms and coverage.",
-      "instruction_tool_free": "Use the supplied primary excerpts and source checks to extract a proof mechanism that fits the gap. Adapt its actual objects and maps with an exact supplied locator. If a theorem or hypothesis needed for the transfer is absent, identify that missing input precisely."
+      "instruction": "Start with the named primary excerpts, mechanism excerpts and source checks. Each excerpt states its source, locator and review scope; a lead stays a lead. Extract a proof mechanism that fits the gap, with an exact locator, and adapt its objects and maps step by step, marking the first step of the source proof that does not transfer. Search the hub library or catalog only if a specific missing theorem or hypothesis blocks this move; report the missing fact, search terms and coverage.",
+      "instruction_tool_free": "Use the supplied primary excerpts, mechanism excerpts and source checks to extract a proof mechanism that fits the gap. Each excerpt states its source, locator and review scope; a lead stays a lead. Adapt its actual objects and maps step by step with an exact supplied locator, marking the first step of the source proof that does not transfer. If a theorem or hypothesis needed for the transfer is absent, identify that missing input precisely."
     },
     {
       "id": "wild-card",

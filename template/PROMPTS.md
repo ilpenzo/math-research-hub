@@ -103,6 +103,14 @@ and then:
 > one is settled, save its complete proof with `variant solve` and tell me
 > its review scope.
 
+**Look for a mechanism in other fields.**
+> Before prospecting in the run [run], do a mechanism search. Restate the
+> obstruction in field-neutral terms and show me that restatement and your
+> planned queries before sending any. Queries must contain none of our
+> unpublished statements. Search the hub and library first, then the
+> literature across fields. Bring back the proofs themselves with exact
+> locators, and treat every source as a lead until checked.
+
 **Deep dig on one hard step.**
 > In the Prospector run [run], plan a deep dig on card [card ID] for the step
 > [missing implication]. Show me the dry run first. [I allow file and shell
