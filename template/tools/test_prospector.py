@@ -1010,5 +1010,139 @@ class MechanismSearchTests(RunCase):
         self.assertNotIn('Search', library['literature-mechanism']['instruction_tool_free'])
 
 
+class KillScriptTests(RunCase):
+    """Item 4: cards carry a finite test; a falsifier runs it; this tool never does."""
+
+    def scripted_card(self, source='print(2 + 2)', **slot_options):
+        call('plan', str(self.run), '-n', '1', '--backend', 'stub')
+        number = pr.round_numbers(self.run)[-1]
+        slots = self.slots(number)
+        slots[0].update(stub_script=dict(language='Python', source=source, expected_if_true='prints 4'),
+                        **slot_options)
+        self.write_slots(number, slots)
+        call('run', str(self.run))
+        return pr.read_jsonl(self.run / 'cards.jsonl')[-1]
+
+    def assay(self, card, backend='stub', **slot_options):
+        call('plan', str(self.run), '--stage', 'assay', '--backend', backend, '--cards', card)
+        number = pr.round_numbers(self.run)[-1]
+        slots = self.slots(number)
+        slots[0].update(slot_options)
+        self.write_slots(number, slots)
+        return number
+
+    def test_schemas_are_strict_at_every_level_for_the_codex_output_schema(self):
+        def walk(node, where):
+            if isinstance(node, dict):
+                if node.get('type') == 'object':
+                    self.assertIs(node.get('additionalProperties'), False, where)
+                    self.assertEqual(sorted(node['required']), sorted(node['properties']), where)
+                for key, value in node.items():
+                    walk(value, f'{where}/{key}')
+        for name in ('card.schema.json', 'variants.schema.json'):
+            walk(pr.load(pr.TEMPLATES / name), name)
+        card = pr.load(pr.TEMPLATES / 'card.schema.json')['properties']
+        self.assertEqual(sorted(card['cards']['items']['properties']['kill_script']['properties']),
+                         ['expected_if_true', 'language', 'source'])
+        self.assertEqual(card['verdicts']['items']['properties']['kill_script_result']['properties']
+                         ['status']['enum'], list(pr.SCRIPT_STATUSES))
+
+    def test_card_keeps_language_source_and_expected_outcome_or_stays_empty(self):
+        empty = dict.fromkeys(pr.SCRIPT_FIELDS, '')
+        self.assertEqual(pr.normal_card({})['kill_script'], empty)
+        self.assertEqual(pr.normal_card({'kill_script': None})['kill_script'], empty)
+        self.assertEqual(pr.normal_card({'kill_script': {'language': 'Sage', 'source': '  '}})
+                         ['kill_script'], empty, 'no source means no finite test')
+        self.assertEqual(pr.normal_card({'kill_script': 'print(1)'})['kill_script']['source'], 'print(1)')
+        card = self.scripted_card()
+        self.assertEqual(card['kill_script'], dict(language='Python', source='print(2 + 2)',
+                                                   expected_if_true='prints 4'))
+        prompt = self.prompt(1)
+        self.assertIn('Give a `kill_script` whenever a finite computation could refute', prompt)
+        self.assertIn('"expected_if_true"', prompt, 'the schema in the prompt carries the field')
+        self.assertIn('leave all three empty when no finite test exists', prompt)
+
+    def test_falsifier_is_told_to_run_the_script_first_in_its_own_sandbox(self):
+        card = self.scripted_card()
+        number = self.assay(card['id'], backend='codex')
+        call('run', str(self.run), '--dry-run')
+        prompt = self.prompt(number)
+        self.assertLess(prompt.index('Run the kill script first.'), prompt.index('Is it circular'))
+        self.assertIn('run it unchanged inside your own sandbox', prompt)
+        self.assertIn('Put the raw output in `output`, verbatim', prompt)
+        self.assertIn('"source": "print(2 + 2)"', prompt)
+        self.assertIn('`kill_script_result`', prompt)
+        slots = self.slots(number)
+        slots[0]['backend'] = 'claude'
+        self.write_slots(number, slots)
+        call('run', str(self.run), '--dry-run')
+        prompt = self.prompt(number)
+        self.assertIn('You cannot run code in this slot.', prompt)
+        self.assertIn('Never state an output you did not observe.', prompt)
+
+    def test_tool_writes_the_script_but_never_executes_it(self):
+        sentinel = self.tmp / 'executed'
+        source = f'open({str(sentinel)!r}, "w").write("ran")\n'
+        card = self.scripted_card(source)
+        number = self.assay(card['id'], stub_script_status={card['id']: 'passed'})
+        refuse = lambda *a, **k: self.fail('prospector.py started a process for model-written code')
+        with patch.object(pr.subprocess, 'Popen', side_effect=refuse), \
+                patch.object(pr.subprocess, 'run', side_effect=refuse), \
+                patch.object(os, 'system', side_effect=refuse):
+            call('run', str(self.run))
+        saved = self.run / f'rounds/r{number:02d}/s1/work/kill_scripts/{card["id"]}.py'
+        self.assertEqual(saved.read_text(), source)
+        self.assertFalse(saved.stat().st_mode & 0o111, 'saved as text, not as an executable')
+        self.assertFalse(sentinel.exists())
+        code = Path(pr.__file__).read_text()
+        for forbidden in ('eval(', 'exec(', 'os.system', 'os.popen', 'runpy', 'importlib', 'shell=True'):
+            self.assertNotIn(forbidden, code)
+        self.assertEqual(code.count('subprocess.Popen('), 1, 'only the fixed backend command is launched')
+        self.assertEqual(code.count('subprocess.run('), 1, 'only the hub brief command is run')
+
+    def test_script_outcome_is_recorded_only_where_it_can_exist(self):
+        card = self.scripted_card()
+        number = self.assay(card['id'], stub_script_status={card['id']: 'passed'})
+        call('run', str(self.run))
+        event = pr.read_jsonl(self.run / 'dispositions.jsonl')[-1]
+        self.assertEqual(event['kill_script'], dict(status='passed', output='stub output'))
+        self.assertIn('Kill script: passed.', call('cards', str(self.run), '--show', card['id']))
+        self.assertEqual(pr.card_status(self.run)[card['id']], 'survives',
+                         'a passed script changes no status by itself')
+        verdict = dict(card=card['id'], verdict='survives', reason='r', evidence='e', salvage='',
+                       kill_script_result=dict(status='passed', output='4'))
+        receipt = dict(status='ok')
+        spec = pr.load(self.run / 'run.json')
+        # A tool-free slot cannot have run anything, whatever it reports.
+        pr.record(self.run, spec, 9, dict(id='s1', stage='assay', backend='claude', cards=[card['id']]),
+                  receipt, dict(summary='s', cards=[], verdicts=[verdict]))
+        event = pr.read_jsonl(self.run / 'dispositions.jsonl')[-1]
+        self.assertEqual(event['kill_script'], dict(status='not-run', output='', claimed='passed'))
+        # A card with no script has no outcome, whatever is reported.
+        call('plan', str(self.run), '-n', '1', '--backend', 'stub')
+        call('run', str(self.run))
+        plain = pr.read_jsonl(self.run / 'cards.jsonl')[-1]['id']
+        pr.record(self.run, spec, 9, dict(id='s2', stage='assay', backend='codex', cards=[plain]),
+                  receipt, dict(summary='s', cards=[], verdicts=[dict(verdict, card=plain)]))
+        self.assertEqual(pr.read_jsonl(self.run / 'dispositions.jsonl')[-1]['kill_script'],
+                         dict(status='none', output=''))
+        pr.record(self.run, spec, 9, dict(id='s3', stage='assay', backend='codex', cards=[card['id']]),
+                  receipt, dict(summary='s', cards=[], verdicts=[
+                      {k: v for k, v in verdict.items() if k != 'kill_script_result'}]))
+        self.assertEqual(pr.read_jsonl(self.run / 'dispositions.jsonl')[-1]['kill_script']['status'],
+                         'not-run', 'a verdict from an older schema reports no run')
+
+    def test_cards_written_before_the_field_existed_still_assay(self):
+        legacy = dict(id='r01-s1-c1', round=1, slot='s1', stage='prospect', backend='codex', lens=None,
+                      origin=[], created_utc=pr.utc(), kind='lemma', confidence=.5, cost='small',
+                      **{key: 'old' for key in pr.CARD_TEXT})
+        pr.append(self.run / 'cards.jsonl', legacy)
+        number = self.assay('r01-s1-c1')
+        call('run', str(self.run))
+        self.assertNotIn('"kill_script"', self.prompt(number).split('## Cards to assay')[1].split('## Output')[0])
+        self.assertFalse((self.run / f'rounds/r{number:02d}/s1/work/kill_scripts').exists())
+        self.assertEqual(pr.read_jsonl(self.run / 'dispositions.jsonl')[-1]['kill_script']['status'], 'none')
+
+
 if __name__ == '__main__':
     unittest.main()

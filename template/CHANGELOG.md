@@ -25,6 +25,11 @@ in each project's CHANGELOG.md. Newest first.
   prompts. Queries are screened for copied hub text and logged with their
   results; sources stay leads until checked.
 
+- Prospector search upgrade, executable kill tests: claim cards carry a
+  `kill_script` (language, source, expected outcome if true) and assay
+  verdicts carry its result and raw output. Falsifiers run scripts in their
+  own sandbox; `prospector.py` never executes model-written code.
+
 - Connection-workspace release: modular publication kernel, scoped lexical/local
   semantic recall, graph/comparison, research aids and Gap briefs, durable frontier
   choices and same-service saved-context recovery. Fresh installation contains

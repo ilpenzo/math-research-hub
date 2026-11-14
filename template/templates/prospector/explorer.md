@@ -28,6 +28,11 @@ certified; label every unproved step as such.
   move is answered; preserve a promising longer calculation with an early note.
 - Use the supplied statements with their stated review scopes. Report a
   missing premise explicitly; an ID or title does not establish its contents.
+- Give a `kill_script` whenever a finite computation could refute your
+  claim: a short self-contained program, with the outcome expected if the
+  claim is true. A falsifier runs it in its own sandbox before anything else.
+  Leave it empty when no finite test exists; a test that cannot fail is
+  worse than none.
 - Try one cheap, decisive control of the vulnerable step when useful. Keep raw
   commands/source/output. Defer broad verification, formal review, polished
   reports and artifact packaging to a selected survivor's development.

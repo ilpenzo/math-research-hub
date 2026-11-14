@@ -9,7 +9,7 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["title", "kind", "statement", "role", "sketch", "weakest_step", "kill_test", "evidence", "differs_from", "confidence", "cost", "gap_after"],
+        "required": ["title", "kind", "statement", "role", "sketch", "weakest_step", "kill_test", "kill_script", "evidence", "differs_from", "confidence", "cost", "gap_after"],
         "properties": {
           "title": {"type": "string"},
           "kind": {"type": "string", "enum": ["lemma", "construction", "reduction", "counterexample", "strategy", "argument"]},
@@ -18,6 +18,7 @@
           "sketch": {"type": "string"},
           "weakest_step": {"type": "string"},
           "kill_test": {"type": "string"},
+          "kill_script": {"type": "object", "additionalProperties": false, "required": ["language", "source", "expected_if_true"], "properties": {"language": {"type": "string"}, "source": {"type": "string"}, "expected_if_true": {"type": "string"}}},
           "evidence": {"type": "string"},
           "differs_from": {"type": "string"},
           "confidence": {"type": "number"},
@@ -31,13 +32,14 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["card", "verdict", "reason", "evidence", "salvage"],
+        "required": ["card", "verdict", "reason", "evidence", "salvage", "kill_script_result"],
         "properties": {
           "card": {"type": "string"},
           "verdict": {"type": "string", "enum": ["killed", "survives", "unclear"]},
           "reason": {"type": "string"},
           "evidence": {"type": "string"},
-          "salvage": {"type": "string"}
+          "salvage": {"type": "string"},
+          "kill_script_result": {"type": "object", "additionalProperties": false, "required": ["status", "output"], "properties": {"status": {"type": "string", "enum": ["passed", "failed", "error", "not-run", "none"]}, "output": {"type": "string"}}}
         }
       }
     }

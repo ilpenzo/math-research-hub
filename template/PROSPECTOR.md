@@ -154,14 +154,27 @@ statement and sketch, each whole or omitted with a note (see
 [Variant ladder](#variant-ladder)). Each returns one claim card by default
 (the run may explicitly allow more):
 statement, role in the gap, sketch, weakest step, fastest kill test,
-evidence, what is new, confidence and cost.
+evidence, what is new, confidence and cost. A card also carries a
+`kill_script` when a finite computation could refute it: the language, the
+source and the outcome expected if the claim is true. It is empty when no
+finite test exists.
 
 **2. Assay.** Triage first: mark restatements and duplicates `duplicate` or
 `parked` instead of paying to test them. `plan --stage assay` sends two cards
-to each falsifier (Codex by default, so it can compute). A falsifier checks
-circularity, recorded obstructions with their exact hypotheses, prior
-records, and an explicit example satisfying the card's hypotheses. Verdicts
-are recorded automatically; override them with `mark`.
+to each falsifier (Codex by default, so it can compute). A falsifier first
+runs each card's `kill_script`, unchanged, inside its own sandbox, after
+reading it, and reports the raw output with a status: `passed`, `failed`,
+`error`, `not-run` or `none`. Then it checks circularity, recorded
+obstructions with their exact hypotheses, prior records, and an explicit
+example satisfying the card's hypotheses. Verdicts are recorded
+automatically with the script result; override them with `mark`. A passed
+script is finite evidence for its cases and changes no status; a failed one
+kills a card only if the script really tests the stated claim.
+
+`prospector.py` never executes model-written code. It saves each script's
+text under the falsifier's `work/kill_scripts/` and nothing more. A tool-free
+Claude falsifier cannot run a script, so the tool records `not-run` for its
+verdicts whatever the answer claims, and `none` for a card without a script.
 
 **3. Dig.** `plan --stage dig --cards ID` develops one survivor into an
 argument for one selected missing implication, by default with the model that
@@ -360,6 +373,11 @@ Claude explorers have no tools by default. Codex explorers run in Codex's
 `workspace-write` sandbox rooted at their own work directory, with
 `OPENAI_API_KEY` removed so the ChatGPT login is used. Never add bypass
 flags. Explorers do not run Git, write canonical files or contact anyone.
+Kill scripts are written by one model and run by another: only a falsifier
+runs them, inside its own sandbox (for Codex, `workspace-write` in its work
+directory), and the tool itself never does. The falsifier is told to read a
+script first and not to run one that does more than compute; that reading is
+instructed, the sandbox is what is enforced.
 CLI login and sandbox availability depend on the local setup. Use
 `doctor --live` only when the owner authorizes a connectivity call.
 

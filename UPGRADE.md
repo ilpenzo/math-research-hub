@@ -14,6 +14,10 @@ changes selection or permissions is off unless a run file asks for it.
   `max_per_slot`) and `default_slots.variants`. A run with no variants plans
   and prompts exactly as before. Prompts now also carry survivors' full
   sketches, counted against `max_inline_chars` after named context files.
+- Kill scripts. `card.schema.json` gained a required `kill_script` on cards
+  and `kill_script_result` on verdicts, so it must be copied together with
+  the tool. Cards and verdicts recorded before the change are read as having
+  no script and no result.
 - Mechanism search. New file `mechanism-search.md`; new run setting
   `mechanism_search.refuse_shared_words`. `frontier.md` and the
   `analogy-transfer` and `literature-mechanism` lenses in `lenses.json`

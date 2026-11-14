@@ -4,7 +4,9 @@ Other explorers proposed the claim cards below. Your job is to find, quickly,
 the decisive reason each one fails, or to report that it survives your best
 attempt. Be adversarial but fair.
 
-For each card check, in order of cost:
+Run the kill script first. {{kill_rule}}
+
+Then, for each card, check in order of cost:
 
 1. Is it circular, a restatement of the target, or an assumption equivalent
    to the gap?

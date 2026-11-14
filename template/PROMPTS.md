@@ -103,6 +103,11 @@ and then:
 > one is settled, save its complete proof with `variant solve` and tell me
 > its review scope.
 
+**Test the ideas before developing them.**
+> In the Prospector run [run], assay the open cards. Have the falsifier run
+> each card's kill script first and show me the raw output for every card,
+> including the ones that passed.
+
 **Look for a mechanism in other fields.**
 > Before prospecting in the run [run], do a mechanism search. Restate the
 > obstruction in field-neutral terms and show me that restatement and your

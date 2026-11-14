@@ -42,6 +42,10 @@ DEPTHS = ('standard', 'deep')
 DEEP_CLAUDE_TOOLS = ('Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash')
 DEEP_CLAUDE_TURNS = 60
 DEEP_FILES = ('SCRATCH.md', 'DERIVATION.md')
+SCRIPT_FIELDS = ('language', 'source', 'expected_if_true')
+SCRIPT_STATUSES = ('passed', 'failed', 'error', 'not-run', 'none')
+SCRIPT_SUFFIXES = {'python': '.py', 'python3': '.py', 'sage': '.sage', 'sagemath': '.sage',
+                   'macaulay2': '.m2', 'm2': '.m2', 'gap': '.g', 'magma': '.m', 'singular': '.sing'}
 SHARED_WORD_RUN = 6
 LEAD_SCOPE = ('lead; not yet checked under the library rules. Verify the exact statement, version '
               'and hypotheses in the primary source before relying on it')
@@ -730,11 +734,15 @@ def cards_block(run, ids):
     for card_id in ids:
         card = {k: v for k, v in known[card_id].items()
                 if k in CARD_TEXT or k in ('id', 'kind', 'confidence') or (k == 'variant' and v)}
+        if has_script(known[card_id]):
+            card['kill_script'] = known[card_id]['kill_script']
         parts.append(f'### {card_id}\n\n```json\n{json.dumps(card, indent=2, ensure_ascii=False)}\n```')
         history = [e for e in events if e['card'] == card_id]
         for event in history:
+            ran = (event.get('kill_script') or {}).get('status')
             parts.append(f"- {event['by']}: {event['status']}. {clip(event.get('reason', ''), 600)}"
-                         + (f" Salvage: {clip(event['salvage'], 400)}" if event.get('salvage') else ''))
+                         + (f" Salvage: {clip(event['salvage'], 400)}" if event.get('salvage') else '')
+                         + (f' Kill script: {ran}.' if ran in ('passed', 'failed', 'error') else ''))
     return '\n\n'.join(parts)
 
 
@@ -758,17 +766,62 @@ def output_contract(backend, stage, max_cards):
             'target at 5); first_step (the first calculation or argument to try).',
             '', 'Schema:', '', '```json', schema.strip(), '```'])
     need = {'prospect': f'`cards`: 1 to {max_cards} claim cards; `verdicts`: [].',
-            'assay': '`verdicts`: one per card above; `cards`: salvaged variants worth pursuing, or [].',
+            'assay': '`verdicts`: one per card above, each with `kill_script_result` (status: passed, '
+                     'failed, error, not-run, or none when the card has no script; output: the raw '
+                     'output, verbatim); `cards`: salvaged variants worth pursuing, or [].',
             'dig': '`cards`: one `argument` card, plus optional sub-lemmas or a counterexample; '
                    '`verdicts`: [].'}[stage]
     return '\n'.join([
         '## Output', '', where, need,
         'Card fields: title; kind; statement (exact, with hypotheses); role (how it closes or shrinks '
         'the gap); sketch (the argument or construction); weakest_step; kill_test (fastest refutation); '
+        'kill_script (a short self-contained program that could refute the claim on finite cases: '
+        'language, source, and expected_if_true, the outcome if the claim is true; leave all three '
+        'empty when no finite test exists); '
         'evidence (computations with commands and output paths, or "none"); differs_from (recorded IDs '
         'or failed routes and what is new); confidence (0 to 1 that it is true and useful); cost '
         '(small/medium/large to develop); gap_after (earliest remaining gap, or "none").',
         '', 'Schema:', '', '```json', schema.strip(), '```'])
+
+
+def has_script(card):
+    return bool(((card.get('kill_script') or {}).get('source') or '').strip())
+
+
+def kill_rule(backend, work):
+    if backend == 'claude':
+        return ('You cannot run code in this slot. Where a card has a `kill_script`, read it and say '
+                "whether it tests the card's statement under the card's hypotheses, but report "
+                '`kill_script_result.status` as `not-run` (`none` when the card has no script). '
+                'Never state an output you did not observe.')
+    return ("Where a card has a `kill_script`, deal with it before anything else. Read it first: it "
+            "must test the card's statement under the card's hypotheses, and it must only compute. "
+            'If it reaches for the network, installs anything or touches files outside your working '
+            'directory, do not run it; report `not-run` and why. Otherwise run it unchanged inside '
+            f'your own sandbox, in {work}; the exact source is saved there under `kill_scripts/`. '
+            'Report `kill_script_result.status`: `passed` if the outcome matches `expected_if_true`, '
+            '`failed` if it contradicts it, `error` if it did not finish, `none` when the card has no '
+            'script. Put the raw output in `output`, verbatim; if it is long, give its first and '
+            'last 2000 characters and save the whole output to a file named in `evidence`. A failed '
+            'script kills the card only if the script really tests the stated claim. A passed '
+            'script is finite evidence, not a proof.')
+
+
+def write_kill_scripts(run, slot, work):
+    """Save each card's script text for the falsifier. Writes bytes only: nothing here runs them."""
+    known, written = cards_by_id(run), []
+    for card_id in slot.get('cards') or []:
+        card = known.get(card_id) or {}
+        if not has_script(card):
+            continue
+        script = card['kill_script']
+        suffix = SCRIPT_SUFFIXES.get(script['language'].strip().lower(), '.txt')
+        path = work / 'kill_scripts' / f'{card_id}{suffix}'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(script['source'], encoding='utf-8')
+        path.chmod(0o644)
+        written.append(path)
+    return written
 
 
 def deep_claude_tools(spec, slot):
@@ -841,6 +894,7 @@ def build_prompt(run, spec, number, slot):
     tools = deep_claude_tools(spec, slot)
     deep = stage == 'dig' and slot.get('depth') == 'deep'
     values = dict(frontier=frontier.strip(), context=context, tool_rule=tool_rule(backend, work, tools),
+                  kill_rule=kill_rule(backend, work),
                   output_contract=output_contract(backend, stage, max_cards),
                   max_cards=str(max_cards))
     # Context files come first in the allowance, then solved proofs, then survivor sketches.
@@ -1207,9 +1261,11 @@ def call_stub(spec, slot, prompt, sdir, work, *, config_path=None):
     if slot.get('stub_fail'):
         return dict(status='failed', exit_code=1, wall_seconds=0.0, error='stub failure'), ''
     def card(title, kind='lemma', gap='unproved step'):
+        script = slot.get('stub_script') or dict(language='', source='', expected_if_true='')
         return dict(title=title, kind=kind, statement=f'{title} holds.', role='closes the gap',
                     sketch='stub sketch', weakest_step='stub step', kill_test='stub test',
-                    evidence='none', differs_from='none', confidence=0.5, cost='small', gap_after=gap)
+                    kill_script=script, evidence='none', differs_from='none',
+                    confidence=slot.get('stub_confidence', 0.5), cost='small', gap_after=gap)
     if slot['stage'] == 'variants':
         payload = dict(summary='stub', variants=[
             dict(title=f'stub variant {name}', kind=kind, statement=f'Every {name} widget is blue.',
@@ -1224,7 +1280,10 @@ def call_stub(spec, slot, prompt, sdir, work, *, config_path=None):
     elif slot['stage'] == 'assay':
         payload = dict(summary='stub', cards=[], verdicts=[
             dict(card=c, verdict='killed' if c in slot.get('stub_kill', []) else 'survives',
-                 reason='stub reason', evidence='none', salvage='') for c in slot['cards']])
+                 reason='stub reason', evidence='none', salvage='',
+                 kill_script_result=dict(status=(slot.get('stub_script_status') or {}).get(c, 'none'),
+                                         output='stub output'))
+            for c in slot['cards']])
     else:
         payload = dict(summary='stub', cards=[card(f"argument for {slot['cards'][0]}", 'argument', 'none')],
                        verdicts=[])
@@ -1253,8 +1312,30 @@ def parse_payload(text):
     return None
 
 
+def normal_script(raw):
+    """A kill script as three strings; all empty when the card offers no finite test."""
+    if isinstance(raw, str):
+        raw = dict(source=raw)
+    if not isinstance(raw, dict):
+        raw = {}
+    script = {key: str(raw.get(key, '') or '') for key in SCRIPT_FIELDS}
+    return script if script['source'].strip() else dict.fromkeys(SCRIPT_FIELDS, '')
+
+
+def normal_script_result(raw, card, could_run):
+    """Record a script outcome only where one can exist: a card with a script, a slot able to run it."""
+    raw = raw if isinstance(raw, dict) else {}
+    claimed = raw.get('status') if raw.get('status') in SCRIPT_STATUSES else 'not-run'
+    if not has_script(card or {}):
+        return dict(status='none', output='')
+    if not could_run or claimed == 'none':
+        return dict(status='not-run', output='', claimed=claimed)
+    return dict(status=claimed, output=str(raw.get('output', '') or ''))
+
+
 def normal_card(raw):
     card = {key: str(raw.get(key, '') or '') for key in CARD_TEXT}
+    card['kill_script'] = normal_script(raw.get('kill_script'))
     card['kind'] = raw.get('kind') if raw.get('kind') in CARD_KINDS else 'strategy'
     try:
         card['confidence'] = min(1.0, max(0.0, float(raw.get('confidence', 0))))
@@ -1314,6 +1395,8 @@ def execute(run, spec, number, slot, prompt):
     sdir = round_dir(run, number) / slot['id']
     work = sdir / 'work'
     (work / 'tmp').mkdir(parents=True, exist_ok=True)
+    if slot['stage'] == 'assay' and slot['backend'] != 'claude':
+        write_kill_scripts(run, slot, work)
     started = utc()
     receipt, text = CALLERS[slot['backend']](spec, slot, prompt, sdir, work,
                                            config_path=run / 'run.json')
@@ -1361,9 +1444,13 @@ def record(run, spec, number, slot, receipt, payload):
             if not isinstance(raw, dict) or raw.get('verdict') not in ('killed', 'survives', 'unclear'):
                 continue
             target = str(raw.get('card', ''))
+            # A tool-free slot cannot have run anything, whatever its answer says.
+            could_run = slot['backend'] != 'claude'
             append(run / 'dispositions.jsonl', dict(
                 card=target, status=raw['verdict'], reason=str(raw.get('reason', '')),
                 evidence=str(raw.get('evidence', '')), salvage=str(raw.get('salvage', '')),
+                kill_script=normal_script_result(raw.get('kill_script_result'), known.get(target),
+                                                 could_run),
                 by=call, utc=stamp, unknown_card=target not in known))
             verdicts += 1
     append(run / 'ledger.jsonl', dict(
@@ -1461,7 +1548,9 @@ def cmd_cards(args):
         for event in read_jsonl(run / 'dispositions.jsonl'):
             if event['card'] == args.show:
                 print(f"- {event['utc']} {event['by']}: {event['status']}. {event.get('reason', '')}"
-                      + (f" Salvage: {event['salvage']}" if event.get('salvage') else ''))
+                      + (f" Salvage: {event['salvage']}" if event.get('salvage') else '')
+                      + (f" Kill script: {event['kill_script']['status']}."
+                         if event.get('kill_script') else ''))
         return
     rows = [c for c in known.values() if (not args.status or status[c['id']] in args.status)
             and (not args.round or c['round'] == args.round)]
